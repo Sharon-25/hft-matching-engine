@@ -1,0 +1,23 @@
+# CMake build outputs
+build/
+cmake-build-*/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.VC.db
+
+# Compiled binaries
+*.exe
+*.obj
+*.pdb
+*.ilk
+
+# Temporary files
+*.log
+*.tmp
+
+# Editor files
+.vscode/
+.idea/
