@@ -1,28 +1,46 @@
 #include <iostream>
 
-#include "matching_engine/Types.hpp"
+#include "matching_engine/Order.hpp"
 
 int main() {
     using namespace matching_engine;
 
-    OrderId order_id = 101;
-    Quantity quantity = 200;
-    Price price = 10250;
+    Order order(
+        101,
+        Side::BUY,
+        10250,
+        500
+    );
 
-    Side side = Side::BUY;
-    OrderType type = OrderType::LIMIT;
+    std::cout << "Original: "
+              << order.original_quantity() << '\n';
 
-    std::cout << "Order ID: " << order_id << '\n';
-    std::cout << "Quantity: " << quantity << '\n';
-    std::cout << "Price (ticks): " << price << '\n';
+    bool first_trade = order.execute(200);
 
-    if (side == Side::BUY) {
-        std::cout << "Side: BUY\n";
-    }
+    std::cout << "Trade 1 accepted: "
+              << std::boolalpha << first_trade << '\n';
 
-    if (type == OrderType::LIMIT) {
-        std::cout << "Type: LIMIT\n";
-    }
+    std::cout << "Remaining: "
+              << order.remaining_quantity() << '\n';
+
+    bool invalid_trade = order.execute(400);
+
+    std::cout << "Trade 2 accepted: "
+              << invalid_trade << '\n';
+
+    std::cout << "Remaining: "
+              << order.remaining_quantity() << '\n';
+
+    bool final_trade = order.execute(300);
+
+    std::cout << "Trade 3 accepted: "
+              << final_trade << '\n';
+
+    std::cout << "Remaining: "
+              << order.remaining_quantity() << '\n';
+
+    std::cout << "Filled: "
+              << order.is_filled() << '\n';
 
     return 0;
 }
