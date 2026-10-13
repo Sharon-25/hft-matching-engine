@@ -14,7 +14,8 @@ Order::Order(
       side_(side),
       price_ticks_(price_ticks),
       original_quantity_(quantity),
-      remaining_quantity_(quantity)
+      remaining_quantity_(quantity),
+      status_(OrderStatus::NEW)
 {
     if (id == 0) {
         throw std::invalid_argument(
@@ -60,17 +61,43 @@ Quantity Order::executed_quantity() const {
 }
 
 bool Order::execute(Quantity quantity) {
-    if (quantity == 0 ||
+    if (!is_active() ||
+        quantity == 0 ||
         quantity > remaining_quantity_) {
         return false;
     }
 
     remaining_quantity_ -= quantity;
+
+    if (remaining_quantity_ == 0) {
+        status_ = OrderStatus::FILLED;
+    } else {
+        status_ = OrderStatus::PARTIALLY_FILLED;
+    }
+
     return true;
 }
 
 bool Order::is_filled() const {
-    return remaining_quantity_ == 0;
+    return status_ == OrderStatus::FILLED;
+}
+
+OrderStatus Order::status() const {
+    return status_;
+}
+
+bool Order::is_active() const {
+    return status_ == OrderStatus::NEW ||
+           status_ == OrderStatus::PARTIALLY_FILLED;
+}
+
+bool Order::cancel() {
+    if (!is_active()) {
+        return false;
+    }
+
+    status_ = OrderStatus::CANCELLED;
+    return true;
 }
 
 } // namespace matching_engine

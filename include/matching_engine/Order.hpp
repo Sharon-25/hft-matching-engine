@@ -12,6 +12,7 @@ private:
 
     Quantity original_quantity_;
     Quantity remaining_quantity_;
+    OrderStatus status_;
 
 public:
     Order(
@@ -32,6 +33,10 @@ public:
 
     bool execute(Quantity quantity);
     bool is_filled() const;
+
+    OrderStatus status() const;
+    bool cancel();
+    bool is_active() const;
 };
 
 } // namespace matching_engine

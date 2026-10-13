@@ -18,4 +18,11 @@ enum class OrderType {
     MARKET
 };
 
+enum class OrderStatus {
+    NEW,
+    PARTIALLY_FILLED,
+    FILLED,
+    CANCELLED
+};
+
 } // namespace matching_engine

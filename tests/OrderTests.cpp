@@ -91,6 +91,49 @@ void test_invalid_initial_quantity() {
     assert(exception_thrown);
 }
 
+void test_cancel_new_order() {
+    Order order(201, Side::BUY, 10000, 100);
+
+    assert(order.is_active());
+    assert(order.cancel());
+
+    assert(order.status() == OrderStatus::CANCELLED);
+    assert(!order.is_active());
+    assert(!order.is_filled());
+
+    assert(order.remaining_quantity() == 100);
+    assert(order.executed_quantity() == 0);
+
+    assert(!order.execute(10));
+    assert(!order.cancel());
+}
+
+void test_cancel_partially_filled_order() {
+    Order order(202, Side::SELL, 15000, 100);
+
+    assert(order.execute(40));
+    assert(order.status() == OrderStatus::PARTIALLY_FILLED);
+
+    assert(order.cancel());
+
+    assert(order.status() == OrderStatus::CANCELLED);
+    assert(order.remaining_quantity() == 60);
+    assert(order.executed_quantity() == 40);
+
+    assert(!order.execute(60));
+}
+
+void test_cannot_cancel_filled_order() {
+    Order order(203, Side::BUY, 10500, 100);
+
+    assert(order.execute(100));
+    assert(order.is_filled());
+
+    assert(!order.cancel());
+    assert(order.status() == OrderStatus::FILLED);
+    assert(order.remaining_quantity() == 0);
+}
+
 int main() {
     test_order_creation();
     test_partial_execution();
@@ -100,6 +143,9 @@ int main() {
     test_invalid_price();
     test_invalid_order_id();
     test_invalid_initial_quantity();
+    test_cancel_new_order();
+    test_cancel_partially_filled_order();
+    test_cannot_cancel_filled_order();
 
     std::cout << "All Order tests passed.\n";
     return 0;
