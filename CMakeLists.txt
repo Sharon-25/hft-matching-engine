@@ -11,6 +11,7 @@ add_library(
     matching_core
     STATIC
     src/Order.cpp
+    src/OrderBook.cpp
 )
 
 target_include_directories(
@@ -79,5 +80,21 @@ if(BUILD_TESTING)
     add_test(
         NAME OrderTests
         COMMAND order_tests
+    )
+
+    add_executable(
+        order_book_tests
+        tests/OrderBookTests.cpp
+    )
+
+    target_link_libraries(
+        order_book_tests
+        PRIVATE
+        matching_core
+    )
+
+    add_test(
+        NAME OrderBookTests
+        COMMAND order_book_tests
     )
 endif()

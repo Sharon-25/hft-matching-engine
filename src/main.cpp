@@ -1,46 +1,35 @@
 #include <iostream>
 
-#include "matching_engine/Order.hpp"
+#include "matching_engine/OrderBook.hpp"
 
 int main() {
     using namespace matching_engine;
 
-    Order order(
-        101,
-        Side::BUY,
-        10250,
-        500
-    );
+    OrderBook book;
 
-    std::cout << "Original: "
-              << order.original_quantity() << '\n';
+    book.add_order(Order(1, Side::BUY, 11000, 100));
+    book.add_order(Order(2, Side::BUY, 10800, 200));
+    book.add_order(Order(3, Side::BUY, 10500, 150));
+    book.add_order(Order(4, Side::BUY, 11000, 300));
 
-    bool first_trade = order.execute(200);
+    book.add_order(Order(5, Side::SELL, 11200, 100));
+    book.add_order(Order(6, Side::SELL, 11200, 200));
+    book.add_order(Order(7, Side::SELL, 11500, 150));
+    book.add_order(Order(8, Side::SELL, 11800, 100));
 
-    std::cout << "Trade 1 accepted: "
-              << std::boolalpha << first_trade << '\n';
+    book.print_book();
 
-    std::cout << "Remaining: "
-              << order.remaining_quantity() << '\n';
+    if (auto bid = book.best_bid()) {
+        std::cout << "Best Bid: " << *bid << '\n';
+    } else {
+        std::cout << "No BUY orders\n";
+    }
 
-    bool invalid_trade = order.execute(400);
-
-    std::cout << "Trade 2 accepted: "
-              << invalid_trade << '\n';
-
-    std::cout << "Remaining: "
-              << order.remaining_quantity() << '\n';
-
-    bool final_trade = order.execute(300);
-
-    std::cout << "Trade 3 accepted: "
-              << final_trade << '\n';
-
-    std::cout << "Remaining: "
-              << order.remaining_quantity() << '\n';
-
-    std::cout << "Filled: "
-              << order.is_filled() << '\n';
+    if (auto ask = book.best_ask()) {
+        std::cout << "Best Ask: " << *ask << '\n';
+    } else {
+        std::cout << "No SELL orders\n";
+    }
 
     return 0;
 }
