@@ -8,6 +8,7 @@ class Order {
 private:
     OrderId order_id_;
     Side side_;
+    OrderType type_;
     Price price_ticks_;
 
     Quantity original_quantity_;
@@ -22,9 +23,18 @@ public:
         Quantity quantity
     );
 
-    OrderId id() const;
-    Side side() const;
-    Price price_ticks() const;
+    Order(
+        OrderId id,
+        Side side,
+        OrderType type,
+        Price price_ticks,
+        Quantity quantity
+    );
+
+    OrderId id() const noexcept;
+    Side side() const noexcept;
+    OrderType type() const noexcept;
+    Price price_ticks() const noexcept;
 
     Quantity original_quantity() const;
     Quantity remaining_quantity() const;

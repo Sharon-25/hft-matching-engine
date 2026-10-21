@@ -20,6 +20,10 @@ void OrderBook::maybe_fail_insertion(
 #endif
 
 bool OrderBook::add_order(const Order& order) {
+    if (order.type() != OrderType::LIMIT) {
+        return false;
+    }
+
     if (order.status() != OrderStatus::NEW ||
         (order.side() != Side::BUY &&
          order.side() != Side::SELL) ||
@@ -37,6 +41,10 @@ bool OrderBook::add_order(const Order& order) {
 }
 
 bool OrderBook::add_active_order(const Order& order) {
+    if (order.type() != OrderType::LIMIT) {
+        return false;
+    }
+
     if (!order.is_active() ||
         (order.side() != Side::BUY &&
          order.side() != Side::SELL) ||
@@ -100,6 +108,10 @@ bool OrderBook::execute_best_order(
         }
 
         auto level = bids_.begin();
+        if (level->second.empty()) {
+            return false;
+        }
+
         Order& order = level->second.front();
 
         if (quantity > order.remaining_quantity()) {
@@ -107,13 +119,26 @@ bool OrderBook::execute_best_order(
         }
 
         const OrderId id = order.id();
+        auto index_it = order_index_.find(id);
+
+        if (index_it == order_index_.end()) {
+            return false;
+        }
+
+        const OrderLocation& location = index_it->second;
+
+        if (location.side != Side::BUY ||
+            location.price != level->first ||
+            location.iterator != level->second.begin()) {
+            return false;
+        }
 
         if (!order.execute(quantity)) {
             return false;
         }
 
         if (order.is_filled()) {
-            order_index_.erase(id);
+            order_index_.erase(index_it);
             level->second.pop_front();
 
             if (level->second.empty()) {
@@ -130,6 +155,10 @@ bool OrderBook::execute_best_order(
         }
 
         auto level = asks_.begin();
+        if (level->second.empty()) {
+            return false;
+        }
+
         Order& order = level->second.front();
 
         if (quantity > order.remaining_quantity()) {
@@ -137,13 +166,26 @@ bool OrderBook::execute_best_order(
         }
 
         const OrderId id = order.id();
+        auto index_it = order_index_.find(id);
+
+        if (index_it == order_index_.end()) {
+            return false;
+        }
+
+        const OrderLocation& location = index_it->second;
+
+        if (location.side != Side::SELL ||
+            location.price != level->first ||
+            location.iterator != level->second.begin()) {
+            return false;
+        }
 
         if (!order.execute(quantity)) {
             return false;
         }
 
         if (order.is_filled()) {
-            order_index_.erase(id);
+            order_index_.erase(index_it);
             level->second.pop_front();
 
             if (level->second.empty()) {

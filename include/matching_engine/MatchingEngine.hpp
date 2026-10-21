@@ -20,6 +20,11 @@ struct SubmissionResult {
     Quantity remaining_quantity;
 };
 
+struct MarketOrderAccounting {
+    Quantity executed_quantity;
+    Quantity cancelled_quantity;
+};
+
 class MatchingEngine {
 private:
     OrderBook book_;
@@ -27,6 +32,8 @@ private:
     std::vector<Trade> trades_;
 
 public:
+    using MarketOrderAccounting = matching_engine::MarketOrderAccounting;
+
     MatchingEngine() = default;
 
     MatchingEngine(const MatchingEngine&) = delete;
@@ -36,6 +43,11 @@ public:
     MatchingEngine& operator=(MatchingEngine&&) = delete;
 
     SubmissionResult submit_limit_order(const Order& order);
+    SubmissionResult submit_market_order(const Order& order);
+
+    MarketOrderAccounting market_order_accounting(
+        const SubmissionResult& result
+    ) const noexcept;
     bool was_order_id_accepted(OrderId id) const;
 
     const OrderBook& order_book() const;

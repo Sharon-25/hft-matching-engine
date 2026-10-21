@@ -41,14 +41,49 @@
       Release-safe tests and production build hardening
       remain tracked separately.
 
+## Phase 5 — Market Orders and Execution Hardening
+
+- [x] P5-01: Add OrderType enum (LIMIT, MARKET) and five-argument Order constructor.
+      Existing four-argument constructor delegates to the new one with LIMIT type.
+      Accessor Order::type() added.
+- [x] P5-02: Implement MatchingEngine::submit_market_order().
+      Validates type, status, side; rejects duplicate IDs; uses OrderIdReservation RAII.
+      Pre-flight counts matchable orders, reserves trade-vector capacity before any mutation.
+- [x] P5-03: Add MarketOrderAccounting helper struct and accessor.
+- [x] P5-04: Add market-order preflight guard:
+      expected_trades > book_.order_count() raises std::logic_error before any mutation.
+- [x] P5-05: Add post-execution quantity-accounting invariant in submit_market_order():
+      executed_quantity <= original_quantity and remaining_quantity == original – executed.
+- [x] P5-06: Harden OrderBook::execute_best_order() (Phase 5.5).
+      Pre-mutation order_index_ lookup; OrderLocation consistency validation
+      (side, price, iterator == begin()); iterator-based index erasure (erase(index_it));
+      no post-erasure dereferences of order, list, or map iterators;
+      used_order_ids_ left unchanged so filled IDs cannot be reused.
+- [x] P5-07: Add targeted execute_best_order() regression tests
+      (full fill, partial fill, FIFO ordering, invalid quantity rejection,
+       subsequent matching after full fill, invariant checks after each step).
+- [x] P5-08: Add static_assert(std::is_nothrow_move_constructible_v<Trade>) and
+      static_assert(std::is_nothrow_destructible_v<Trade>) in OrderBookTests and
+      MatchingEngineTests.
+- [x] P5-09: Replace assert() with CHECK() macro in all three test files
+      (OrderTests.cpp, OrderBookTests.cpp, MatchingEngineTests.cpp).
+      CHECK() evaluates in both Debug and Release configurations.
+      All static_assert() calls left intact.
+- [x] P5-10: Complete Phase 5 regression verification.
+      All three CTest executables passed in the existing build
+      and in an independently configured Release build.
+      Runtime CHECK() assertions remain active under NDEBUG.
+      Broader randomized, allocator-failure and concurrency
+      testing remain pending.
+- [x] P5-11: Complete Phase 5 Git commit.
+      Verify staged changes, exclude generated build artifacts,
+      and record the final commit.
+
 ## Later phases
 
-- [ ] Market orders and unfilled market-order behavior.
 - [ ] Invalid input, overflow and quantity-boundary tests.
 - [ ] Inject failures at actual allocator operations and verify recovery,
       beyond manually inserted failure checkpoints.
-- [ ] Ensure Release builds execute meaningful test checks
-      without relying on assert().
 - [ ] Isolate MATCHING_ENGINE_TESTING and test-only failure hooks
       from production builds.
 - [ ] Review duplicated session-ID state in MatchingEngine and OrderBook.
@@ -57,6 +92,11 @@
 - [ ] Benchmark preflight trade counting and incoming-order staging.
 - [ ] Verify exception behavior of every operation performed after
       the first trade, including finalization.
+- [ ] Review market SELL preflight crossing-bound asymmetry.
+      Price{0} is correct under the current strictly positive
+      limit-price model. Consider using
+      std::numeric_limits<Price>::min() for symmetry and
+      future price-model extensions.
 - [ ] Session-wide identity ownership across multiple books.
 - [ ] Concurrent submission architecture and thread-safety tests.
 - [ ] Deterministic order processing and execution sequencing.
@@ -85,15 +125,17 @@
 
 - Failure-safe admission has been verified for tested insertion failure
   points; exhaustive allocation-failure coverage is not yet established.
-- Test-only failure hooks are currently enabled in the main build.
-- Current assert-based tests are Debug-dependent; Release-safe test
-  checks are still required.
+- Test-only failure hooks are currently enabled in the main build
+  (MATCHING_ENGINE_TESTING is PUBLIC on matching_core).
 - Trade history has no enforced memory bound.
-- Comprehensive book-invariant testing remains incomplete.
-- Final BUY and SELL price-time-priority verification is pending.
+- Comprehensive randomized book-invariant testing remains incomplete.
+- Final BUY and SELL price-time-priority verification under randomized
+  sequences is pending.
 - ID uniqueness currently has both book-level and engine-level state.
-- Concurrency, market orders and benchmarking are not implemented.
-- MATCHING_ENGINE_TESTING is currently PUBLIC on matching_core, so test-only functionality is also enabled in matching_engine.
+- Concurrency and benchmarking are not implemented.
+- Market SELL preflight uses Price{0}, which is correct for
+  currently accepted positive limit prices but assumes that
+  the price model will not admit zero or negative resting prices.
 - Trade-vector capacity is reserved before incoming-order staging.
   If staging fails, capacity may remain increased despite no trade
   occurring. The failure guarantee preserves logical trading state,

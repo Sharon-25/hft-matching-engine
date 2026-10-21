@@ -1,6 +1,7 @@
 #include "matching_engine/MatchingEngine.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <unordered_set>
 
@@ -49,6 +50,14 @@ public:
 SubmissionResult MatchingEngine::submit_limit_order(
     const Order& order
 ) {
+    if (order.type() != OrderType::LIMIT) {
+        return {
+            SubmissionStatus::INVALID_ORDER,
+            0,
+            order.remaining_quantity()
+        };
+    }
+
     if (order.status() != OrderStatus::NEW ||
         (order.side() != Side::BUY &&
          order.side() != Side::SELL)) {
@@ -178,6 +187,160 @@ SubmissionResult MatchingEngine::submit_limit_order(
     };
 }
 
+SubmissionResult MatchingEngine::submit_market_order(
+    const Order& order
+) {
+    // 1. Validate the incoming market order.
+    if (order.type() != OrderType::MARKET ||
+        order.status() != OrderStatus::NEW ||
+        (order.side() != Side::BUY &&
+         order.side() != Side::SELL)) {
+        return {
+            SubmissionStatus::INVALID_ORDER,
+            0,
+            order.remaining_quantity()
+        };
+    }
+
+    // 2. Reject previously accepted or used IDs.
+    if (accepted_order_ids_.contains(order.id()) ||
+        book_.was_order_id_used(order.id())) {
+        return {
+            SubmissionStatus::DUPLICATE_ID,
+            0,
+            order.remaining_quantity()
+        };
+    }
+
+    // 3. Reserve the incoming ID.
+    // This rolls back automatically if preparation fails.
+    OrderIdReservation reservation(
+        accepted_order_ids_,
+        order.id()
+    );
+
+    // 4. Count the resting orders this market order
+    // could execute against.
+    //
+    // These values are preflight crossing bounds,
+    // NOT execution prices.
+    const Price crossing_bound =
+        order.side() == Side::BUY
+            ? std::numeric_limits<Price>::max()
+            : Price{0};
+
+    const std::size_t expected_trades =
+        book_.count_matchable_orders(
+            order.side(),
+            crossing_bound,
+            order.remaining_quantity()
+        );
+
+    if (expected_trades > book_.order_count()) {
+        throw std::logic_error(
+            "Market preflight count exceeds resting order count"
+        );
+    }
+
+    // 5. Reserve all trade-record storage before
+    // performing any irreversible executions.
+    if (expected_trades >
+        trades_.max_size() - trades_.size()) {
+        throw std::length_error(
+            "Trade history capacity exceeded"
+        );
+    }
+
+    trades_.reserve(
+        trades_.size() + expected_trades
+    );
+
+    // 6. Execute directly against the resting book.
+    // The incoming market order is never inserted.
+    const Side opposite_side =
+        order.side() == Side::BUY
+            ? Side::SELL
+            : Side::BUY;
+
+    Quantity executed_quantity = 0;
+    Quantity remaining_quantity =
+        order.remaining_quantity();
+
+    const std::size_t trades_before =
+        trades_.size();
+
+    while (remaining_quantity > 0) {
+        const Order* resting =
+            book_.best_order(opposite_side);
+
+        if (resting == nullptr) {
+            break;
+        }
+
+        const Quantity executable =
+            std::min(
+                remaining_quantity,
+                resting->remaining_quantity()
+            );
+
+        // Capture fields before execution.
+        // The resting order may be erased afterward.
+        const OrderId resting_id = resting->id();
+        const Price execution_price =
+            resting->price_ticks();
+
+        // Only the resting order exists in the book.
+        if (!book_.execute_best_order(
+                opposite_side,
+                executable)) {
+            throw std::logic_error(
+                "Market execution invariant violated"
+            );
+        }
+
+        // The first completed execution makes this ID permanent.
+        reservation.commit();
+
+        trades_.push_back(Trade{
+            order.id(),
+            resting_id,
+            execution_price,
+            executable
+        });
+
+        executed_quantity += executable;
+        remaining_quantity -= executable;
+    }
+
+    // 7. Verify preflight trade accounting.
+    if (trades_.size() - trades_before !=
+        expected_trades) {
+        throw std::logic_error(
+            "Market trade count mismatch"
+        );
+    }
+
+    if (executed_quantity >
+        order.original_quantity() ||
+        remaining_quantity !=
+            order.original_quantity() - executed_quantity) {
+        throw std::logic_error(
+            "Market order quantity accounting mismatch"
+        );
+    }
+
+    // 8. Preserve the accepted ID permanently.
+    reservation.commit();
+
+    // The unexecuted remainder is cancelled.
+    // It is never inserted into the order book.
+    return {
+        SubmissionStatus::ACCEPTED,
+        executed_quantity,
+        remaining_quantity
+    };
+}
+
 bool MatchingEngine::was_order_id_accepted(
     OrderId id
 ) const {
@@ -190,6 +353,15 @@ const OrderBook& MatchingEngine::order_book() const {
 
 const std::vector<Trade>& MatchingEngine::trades() const noexcept {
     return trades_;
+}
+
+MarketOrderAccounting MatchingEngine::market_order_accounting(
+    const SubmissionResult& result
+) const noexcept {
+    return {
+        result.executed_quantity,
+        result.remaining_quantity
+    };
 }
 
 } // namespace matching_engine

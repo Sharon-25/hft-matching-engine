@@ -10,8 +10,25 @@ Order::Order(
     Price price_ticks,
     Quantity quantity
 )
+    : Order(
+          id,
+          side,
+          OrderType::LIMIT,
+          price_ticks,
+          quantity
+      ) {
+}
+
+Order::Order(
+    OrderId id,
+    Side side,
+    OrderType type,
+    Price price_ticks,
+    Quantity quantity
+)
     : order_id_(id),
       side_(side),
+      type_(type),
       price_ticks_(price_ticks),
       original_quantity_(quantity),
       remaining_quantity_(quantity),
@@ -23,9 +40,9 @@ Order::Order(
         );
     }
 
-    if (price_ticks <= 0) {
+    if (side != Side::BUY && side != Side::SELL) {
         throw std::invalid_argument(
-            "Limit price must be positive"
+            "Invalid order side"
         );
     }
 
@@ -34,17 +51,41 @@ Order::Order(
             "Order quantity must be positive"
         );
     }
+
+    if (type == OrderType::LIMIT) {
+        if (price_ticks <= 0) {
+            throw std::invalid_argument(
+                "Limit order price must be positive"
+            );
+        }
+    }
+    else if (type == OrderType::MARKET) {
+        if (price_ticks != 0) {
+            throw std::invalid_argument(
+                "Market orders must not specify a price"
+            );
+        }
+    }
+    else {
+        throw std::invalid_argument(
+            "Invalid order type"
+        );
+    }
 }
 
-OrderId Order::id() const {
+OrderId Order::id() const noexcept {
     return order_id_;
 }
 
-Side Order::side() const {
+Side Order::side() const noexcept {
     return side_;
 }
 
-Price Order::price_ticks() const {
+OrderType Order::type() const noexcept {
+    return type_;
+}
+
+Price Order::price_ticks() const noexcept {
     return price_ticks_;
 }
 
