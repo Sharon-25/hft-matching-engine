@@ -460,6 +460,156 @@ void test_order_book_invariants() {
     assert(book.was_order_id_used(603));
 }
 
+void test_best_order_access() {
+    OrderBook book;
+
+    assert(book.best_order(Side::BUY) == nullptr);
+    assert(book.best_order(Side::SELL) == nullptr);
+
+    assert(book.add_order(
+        Order(1, Side::BUY, 11000, 100)
+    ));
+
+    assert(book.add_order(
+        Order(2, Side::BUY, 11000, 200)
+    ));
+
+    assert(book.add_order(
+        Order(3, Side::BUY, 10800, 150)
+    ));
+
+    assert(book.add_order(
+        Order(4, Side::SELL, 11500, 100)
+    ));
+
+    const Order* best_buy =
+        book.best_order(Side::BUY);
+
+    assert(best_buy != nullptr);
+    assert(best_buy->id() == 1);
+    assert(best_buy->price_ticks() == 11000);
+    assert(best_buy->remaining_quantity() == 100);
+
+    const Order* best_sell =
+        book.best_order(Side::SELL);
+
+    assert(best_sell != nullptr);
+    assert(best_sell->id() == 4);
+
+    // Cancel the first BUY order.
+    assert(book.cancel_order(1));
+
+    // Query again; the old pointer must not be reused.
+    best_buy = book.best_order(Side::BUY);
+
+    assert(best_buy != nullptr);
+    assert(best_buy->id() == 2);
+
+    assert(book.cancel_order(2));
+
+    best_buy = book.best_order(Side::BUY);
+
+    assert(best_buy != nullptr);
+    assert(best_buy->id() == 3);
+    assert(best_buy->price_ticks() == 10800);
+}
+
+void test_partial_execution_preserves_fifo() {
+    OrderBook book;
+
+    assert(book.add_order(
+        Order(1, Side::SELL, 11000, 100)
+    ));
+
+    assert(book.add_order(
+        Order(2, Side::SELL, 11000, 200)
+    ));
+
+    assert(book.execute_best_order(Side::SELL, 40));
+
+    const Order* best = book.best_order(Side::SELL);
+
+    assert(best != nullptr);
+    assert(best->id() == 1);
+    assert(best->remaining_quantity() == 60);
+    assert(best->status() == OrderStatus::PARTIALLY_FILLED);
+
+    assert(book.order_count() == 2);
+
+    assert((book.order_ids_at_price(
+        Side::SELL, 11000
+    ) == std::vector<OrderId>{1, 2}));
+}
+
+void test_full_execution_removes_order() {
+    OrderBook book;
+
+    assert(book.add_order(
+        Order(10, Side::BUY, 11000, 100)
+    ));
+
+    assert(book.add_order(
+        Order(20, Side::BUY, 10800, 200)
+    ));
+
+    assert(book.execute_best_order(Side::BUY, 100));
+
+    assert(!book.contains(10));
+    assert(book.was_order_id_used(10));
+
+    assert(book.order_count() == 1);
+
+    const Order* best = book.best_order(Side::BUY);
+
+    assert(best != nullptr);
+    assert(best->id() == 20);
+    assert(*book.best_bid() == 10800);
+}
+
+void test_invalid_execution_does_not_modify_book() {
+    OrderBook book;
+
+    assert(!book.execute_best_order(Side::BUY, 10));
+
+    assert(book.add_order(
+        Order(30, Side::SELL, 11500, 100)
+    ));
+
+    assert(!book.execute_best_order(Side::SELL, 0));
+    assert(!book.execute_best_order(Side::SELL, 101));
+
+    assert(!book.execute_best_order(
+        static_cast<Side>(99), 10
+    ));
+
+    const Order* best = book.best_order(Side::SELL);
+
+    assert(best != nullptr);
+    assert(best->remaining_quantity() == 100);
+    assert(best->status() == OrderStatus::NEW);
+    assert(book.order_count() == 1);
+}
+
+void test_filled_order_id_cannot_be_reused() {
+    OrderBook book;
+
+    assert(book.add_order(
+        Order(40, Side::BUY, 10000, 50)
+    ));
+
+    assert(book.execute_best_order(Side::BUY, 50));
+
+    assert(!book.contains(40));
+    assert(book.was_order_id_used(40));
+
+    assert(!book.add_order(
+        Order(40, Side::SELL, 11000, 100)
+    ));
+
+    assert(book.order_count() == 0);
+    assert(!book.best_bid().has_value());
+}
+
 int main() {
     test_empty_book();
     test_best_prices();
@@ -481,6 +631,11 @@ int main() {
     test_rejected_order_does_not_consume_id();
     test_independent_order_id_namespaces();
     test_order_book_invariants();
+    test_best_order_access();
+    test_partial_execution_preserves_fifo();
+    test_full_execution_removes_order();
+    test_invalid_execution_does_not_modify_book();
+    test_filled_order_id_cannot_be_reused();
 
     std::cout << "All OrderBook tests passed.\n";
     return 0;

@@ -1,5 +1,6 @@
 #include <cassert>
 #include <iostream>
+#include <new>
 #include <type_traits>
 
 #include "matching_engine/MatchingEngine.hpp"
@@ -238,6 +239,447 @@ void test_buy_stops_at_limit_price() {
     assert(sell->remaining_quantity() == 100);
 }
 
+void test_fully_filled_incoming_id_is_preserved() {
+    MatchingEngine engine;
+
+    engine.submit_limit_order(
+        Order(1, Side::SELL, 11000, 100)
+    );
+
+    const SubmissionResult result =
+        engine.submit_limit_order(
+            Order(2, Side::BUY, 11500, 100)
+        );
+
+    assert(result.status == SubmissionStatus::ACCEPTED);
+    assert(result.executed_quantity == 100);
+    assert(result.remaining_quantity == 0);
+
+    assert(!engine.order_book().contains(2));
+    assert(engine.was_order_id_accepted(2));
+    assert(engine.order_book().was_order_id_used(2));
+
+    const SubmissionResult duplicate =
+        engine.submit_limit_order(
+            Order(2, Side::BUY, 12000, 50)
+        );
+
+    assert(
+        duplicate.status ==
+        SubmissionStatus::DUPLICATE_ID
+    );
+}
+
+void test_staged_incoming_partial_fill() {
+    MatchingEngine engine;
+
+    engine.submit_limit_order(
+        Order(10, Side::SELL, 11000, 100)
+    );
+
+    const SubmissionResult result =
+        engine.submit_limit_order(
+            Order(20, Side::BUY, 11500, 250)
+        );
+
+    assert(result.status == SubmissionStatus::ACCEPTED);
+    assert(result.executed_quantity == 100);
+    assert(result.remaining_quantity == 150);
+
+    const Order* incoming =
+        engine.order_book().find_order(20);
+
+    assert(incoming != nullptr);
+    assert(incoming->remaining_quantity() == 150);
+    assert(
+        incoming->status() ==
+        OrderStatus::PARTIALLY_FILLED
+    );
+
+    assert(engine.order_book().order_count() == 1);
+}
+
+void test_rejected_order_preserves_book() {
+    MatchingEngine engine;
+
+    const SubmissionResult first =
+        engine.submit_limit_order(
+            Order(10, Side::BUY, 11000, 100)
+        );
+
+    assert(first.status == SubmissionStatus::ACCEPTED);
+
+    const std::size_t before_count =
+        engine.order_book().order_count();
+
+    const auto before_bid =
+        engine.order_book().best_bid();
+
+    const SubmissionResult duplicate =
+        engine.submit_limit_order(
+            Order(10, Side::SELL, 10500, 200)
+        );
+
+    assert(
+        duplicate.status ==
+        SubmissionStatus::DUPLICATE_ID
+    );
+
+    assert(
+        engine.order_book().order_count() ==
+        before_count
+    );
+
+    assert(engine.order_book().best_bid() == before_bid);
+    assert(!engine.order_book().best_ask().has_value());
+
+    const Order* original =
+        engine.order_book().find_order(10);
+
+    assert(original != nullptr);
+    assert(original->remaining_quantity() == 100);
+    assert(original->side() == Side::BUY);
+}
+
+void test_allocation_failure_preserves_book() {
+    MatchingEngine engine;
+
+    const SubmissionResult initial =
+        engine.submit_limit_order(
+            Order(1, Side::SELL, 11000, 100)
+        );
+
+    assert(initial.status == SubmissionStatus::ACCEPTED);
+
+    engine.set_insertion_failure_for_test(
+        InsertionFailurePoint::AFTER_LIST_INSERT
+    );
+
+    bool caught = false;
+
+    try {
+        engine.submit_limit_order(
+            Order(2, Side::BUY, 11500, 200)
+        );
+    } catch (const std::bad_alloc&) {
+        caught = true;
+    }
+
+    assert(caught);
+
+    // The original resting order must remain unchanged.
+    const Order* original =
+        engine.order_book().find_order(1);
+
+    assert(original != nullptr);
+    assert(original->remaining_quantity() == 100);
+
+    // The failed incoming order must not be stored.
+    assert(!engine.order_book().contains(2));
+
+    // Its session ID must be available for reuse.
+    assert(!engine.was_order_id_accepted(2));
+    assert(!engine.order_book().was_order_id_used(2));
+
+    assert(engine.order_book().order_count() == 1);
+    assert(*engine.order_book().best_ask() == 11000);
+
+    // A subsequent valid submission must still work.
+    const SubmissionResult retry =
+        engine.submit_limit_order(
+            Order(2, Side::BUY, 11500, 200)
+        );
+
+    assert(retry.status == SubmissionStatus::ACCEPTED);
+    assert(retry.executed_quantity == 100);
+    assert(retry.remaining_quantity == 100);
+}
+
+void test_insertion_rollback_at_all_checkpoints() {
+    const InsertionFailurePoint points[] = {
+        InsertionFailurePoint::AFTER_LIST_INSERT,
+        InsertionFailurePoint::AFTER_INDEX_INSERT,
+        InsertionFailurePoint::AFTER_USED_ID_INSERT
+    };
+
+    for (InsertionFailurePoint point : points) {
+        MatchingEngine engine;
+
+        const SubmissionResult initial =
+            engine.submit_limit_order(
+                Order(1, Side::SELL, 11000, 100)
+            );
+
+        assert(
+            initial.status ==
+            SubmissionStatus::ACCEPTED
+        );
+
+        engine.set_insertion_failure_for_test(point);
+
+        bool caught = false;
+
+        try {
+            engine.submit_limit_order(
+                Order(2, Side::BUY, 11500, 200)
+            );
+        } catch (const std::bad_alloc&) {
+            caught = true;
+        }
+
+        assert(caught);
+
+        const OrderBook& book = engine.order_book();
+
+        assert(book.order_count() == 1);
+        assert(book.contains(1));
+        assert(!book.contains(2));
+
+        const Order* original = book.find_order(1);
+
+        assert(original != nullptr);
+        assert(original->remaining_quantity() == 100);
+
+        assert(!engine.was_order_id_accepted(2));
+        assert(!book.was_order_id_used(2));
+
+        // Retry with the same ID after rollback.
+        const SubmissionResult retry =
+            engine.submit_limit_order(
+                Order(2, Side::BUY, 11500, 200)
+            );
+
+        assert(retry.status == SubmissionStatus::ACCEPTED);
+        assert(retry.executed_quantity == 100);
+        assert(retry.remaining_quantity == 100);
+    }
+}
+
+static_assert(std::is_trivially_copyable_v<Trade>);
+
+void test_trade_record_model() {
+    Trade trade{
+        3,
+        1,
+        11000,
+        100
+    };
+
+    assert(trade.incoming_order_id == 3);
+    assert(trade.resting_order_id == 1);
+    assert(trade.execution_price_ticks == 11000);
+    assert(trade.executed_quantity == 100);
+}
+
+void test_initial_trade_history_is_empty() {
+    MatchingEngine engine;
+
+    assert(engine.trades().empty());
+}
+
+void test_multiple_trade_records() {
+    MatchingEngine engine;
+
+    engine.submit_limit_order(
+        Order(1, Side::SELL, 11000, 100)
+    );
+
+    engine.submit_limit_order(
+        Order(2, Side::SELL, 11200, 100)
+    );
+
+    engine.submit_limit_order(
+        Order(3, Side::SELL, 11400, 100)
+    );
+
+    const SubmissionResult result =
+        engine.submit_limit_order(
+            Order(4, Side::BUY, 11500, 250)
+        );
+
+    assert(result.status == SubmissionStatus::ACCEPTED);
+    assert(result.executed_quantity == 250);
+    assert(result.remaining_quantity == 0);
+
+    const auto& trades = engine.trades();
+
+    assert(trades.size() == 3);
+
+    assert(trades[0].incoming_order_id == 4);
+    assert(trades[0].resting_order_id == 1);
+    assert(trades[0].execution_price_ticks == 11000);
+    assert(trades[0].executed_quantity == 100);
+
+    assert(trades[1].incoming_order_id == 4);
+    assert(trades[1].resting_order_id == 2);
+    assert(trades[1].execution_price_ticks == 11200);
+    assert(trades[1].executed_quantity == 100);
+
+    assert(trades[2].incoming_order_id == 4);
+    assert(trades[2].resting_order_id == 3);
+    assert(trades[2].execution_price_ticks == 11400);
+    assert(trades[2].executed_quantity == 50);
+
+    const Order* remaining =
+        engine.order_book().find_order(3);
+
+    assert(remaining != nullptr);
+    assert(remaining->remaining_quantity() == 50);
+}
+
+void test_matchable_order_count() {
+    OrderBook book;
+
+    assert(book.add_order(
+        Order(1, Side::SELL, 11000, 100)
+    ));
+
+    assert(book.add_order(
+        Order(2, Side::SELL, 11200, 100)
+    ));
+
+    assert(book.add_order(
+        Order(3, Side::SELL, 11400, 100)
+    ));
+
+    assert(
+        book.count_matchable_orders(
+            Side::BUY, 11500, 250
+        ) == 3
+    );
+
+    assert(
+        book.count_matchable_orders(
+            Side::BUY, 11100, 250
+        ) == 1
+    );
+
+    assert(
+        book.count_matchable_orders(
+            Side::BUY, 10900, 250
+        ) == 0
+    );
+}
+
+void test_paired_execution_partial_and_full_fill() {
+    MatchingEngine engine;
+
+    const SubmissionResult resting =
+        engine.submit_limit_order(
+            Order(10, Side::SELL, 11000, 100)
+        );
+
+    assert(resting.status == SubmissionStatus::ACCEPTED);
+
+    const SubmissionResult incoming =
+        engine.submit_limit_order(
+            Order(20, Side::BUY, 11500, 150)
+        );
+
+    assert(incoming.status == SubmissionStatus::ACCEPTED);
+    assert(incoming.executed_quantity == 100);
+    assert(incoming.remaining_quantity == 50);
+
+    const OrderBook& book = engine.order_book();
+
+    assert(!book.contains(10));
+    assert(book.contains(20));
+
+    const Order* remainder = book.find_order(20);
+
+    assert(remainder != nullptr);
+    assert(remainder->remaining_quantity() == 50);
+    assert(
+        remainder->status() ==
+        OrderStatus::PARTIALLY_FILLED
+    );
+
+    assert(engine.trades().size() == 1);
+
+    const Trade& trade = engine.trades()[0];
+
+    assert(trade.incoming_order_id == 20);
+    assert(trade.resting_order_id == 10);
+    assert(trade.execution_price_ticks == 11000);
+    assert(trade.executed_quantity == 100);
+}
+
+void test_paired_execution_preserves_fifo() {
+    MatchingEngine engine;
+
+    engine.submit_limit_order(
+        Order(1, Side::SELL, 11000, 100)
+    );
+
+    engine.submit_limit_order(
+        Order(2, Side::SELL, 11000, 100)
+    );
+
+    const SubmissionResult result =
+        engine.submit_limit_order(
+            Order(3, Side::BUY, 11500, 150)
+        );
+
+    assert(result.executed_quantity == 150);
+    assert(result.remaining_quantity == 0);
+
+    const auto& trades = engine.trades();
+
+    assert(trades.size() == 2);
+
+    assert(trades[0].resting_order_id == 1);
+    assert(trades[0].executed_quantity == 100);
+
+    assert(trades[1].resting_order_id == 2);
+    assert(trades[1].executed_quantity == 50);
+
+    const Order* remaining =
+        engine.order_book().find_order(2);
+
+    assert(remaining != nullptr);
+    assert(remaining->remaining_quantity() == 50);
+}
+
+void test_trade_history_consistency() {
+    MatchingEngine engine;
+
+    engine.submit_limit_order(
+        Order(1, Side::SELL, 11000, 100)
+    );
+
+    engine.submit_limit_order(
+        Order(2, Side::SELL, 11200, 150)
+    );
+
+    const SubmissionResult result =
+        engine.submit_limit_order(
+            Order(3, Side::BUY, 11500, 200)
+        );
+
+    assert(result.status == SubmissionStatus::ACCEPTED);
+
+    Quantity total_executed = 0;
+
+    for (const Trade& trade : engine.trades()) {
+        assert(trade.incoming_order_id !=
+               trade.resting_order_id);
+
+        assert(trade.executed_quantity > 0);
+        assert(trade.execution_price_ticks > 0);
+
+        total_executed += trade.executed_quantity;
+    }
+
+    assert(total_executed == result.executed_quantity);
+    assert(total_executed == 200);
+
+    const Order* remaining =
+        engine.order_book().find_order(2);
+
+    assert(remaining != nullptr);
+    assert(remaining->remaining_quantity() == 50);
+}
+
 int main() {
     test_engine_starts_with_empty_book();
     test_engine_is_not_copyable_or_movable();
@@ -249,6 +691,18 @@ int main() {
     test_partial_incoming_order_rests();
     test_failed_submission_preserves_id_availability();
     test_buy_stops_at_limit_price();
+    test_fully_filled_incoming_id_is_preserved();
+    test_staged_incoming_partial_fill();
+    test_rejected_order_preserves_book();
+    test_allocation_failure_preserves_book();
+    test_insertion_rollback_at_all_checkpoints();
+    test_trade_record_model();
+    test_initial_trade_history_is_empty();
+    test_multiple_trade_records();
+    test_matchable_order_count();
+    test_paired_execution_partial_and_full_fill();
+    test_paired_execution_preserves_fifo();
+    test_trade_history_consistency();
 
     std::cout << "MatchingEngine tests passed\n";
     return 0;
