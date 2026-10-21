@@ -108,6 +108,8 @@ SubmissionResult MatchingEngine::submit_limit_order(
     Quantity executed_quantity = 0;
     Quantity remaining_quantity = order.remaining_quantity();
 
+    const std::size_t trades_before = trades_.size();
+
     while (remaining_quantity > 0) {
         const Order* resting =
             book_.best_order(opposite_side);
@@ -159,6 +161,12 @@ SubmissionResult MatchingEngine::submit_limit_order(
 
         executed_quantity += executable;
         remaining_quantity -= executable;
+    }
+
+    if (trades_.size() - trades_before != expected_trades) {
+        throw std::logic_error(
+            "Preflight trade count does not match executions"
+        );
     }
 
     reservation.commit();

@@ -12,6 +12,7 @@ add_library(
     STATIC
     src/Order.cpp
     src/OrderBook.cpp
+    src/MatchingEngine.cpp
 )
 
 target_include_directories(
@@ -30,6 +31,11 @@ set_target_properties(
     matching_core
     PROPERTIES
     CXX_EXTENSIONS OFF
+)
+
+target_compile_definitions(
+    matching_core
+    PUBLIC MATCHING_ENGINE_TESTING
 )
 
 # Compiler warnings
@@ -96,5 +102,21 @@ if(BUILD_TESTING)
     add_test(
         NAME OrderBookTests
         COMMAND order_book_tests
+    )
+
+    add_executable(
+        matching_engine_tests
+        tests/MatchingEngineTests.cpp
+    )
+
+    target_link_libraries(
+        matching_engine_tests
+        PRIVATE
+        matching_core
+    )
+
+    add_test(
+        NAME MatchingEngineTests
+        COMMAND matching_engine_tests
     )
 endif()

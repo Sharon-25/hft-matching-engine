@@ -192,6 +192,8 @@ public:
         Quantity incoming_quantity
     ) const;
 
+    bool validate_invariants() const;
+
     std::vector<OrderId> order_ids_at_price(
         Side side,
         Price price

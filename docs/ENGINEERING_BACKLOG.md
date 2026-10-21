@@ -11,7 +11,9 @@
 ## Phase 4 — Limit Order Matching
 
 - [x] P4-01: Guarantee failure-safe incoming order admission.
-      Verified for tested insertion failure points.
+      Verified for tested insertion failure checkpoints.
+      The guarantee covers logical trading state; allocated capacity
+      may change. Actual allocator-failure testing remains pending.
 - [x] P4-02: Prepare all required storage before irreversible executions.
       Implemented for incoming book storage and trade-vector capacity.
 - [x] P4-03: Preserve accepted IDs after any completed execution.
@@ -35,8 +37,18 @@
 
 - [ ] Market orders and unfilled market-order behavior.
 - [ ] Invalid input, overflow and quantity-boundary tests.
-- [ ] Allocation-failure injection and recovery tests.
-- [ ] Release-safe test assertions.
+- [ ] Inject failures at actual allocator operations and verify recovery,
+      beyond manually inserted failure checkpoints.
+- [ ] Ensure Release builds execute meaningful test checks
+      without relying on assert().
+- [ ] Isolate MATCHING_ENGINE_TESTING and test-only failure hooks
+      from production builds.
+- [ ] Review duplicated session-ID state in MatchingEngine and OrderBook.
+- [ ] Define how trade history is bounded or consumed in long-running sessions.
+- [ ] Add stronger boundary tests and randomized operation-sequence tests.
+- [ ] Benchmark preflight trade counting and incoming-order staging.
+- [ ] Verify exception behavior of every operation performed after
+      the first trade, including finalization.
 - [ ] Session-wide identity ownership across multiple books.
 - [ ] Concurrent submission architecture and thread-safety tests.
 - [ ] Deterministic order processing and execution sequencing.
@@ -73,3 +85,7 @@
 - Final BUY and SELL price-time-priority verification is pending.
 - ID uniqueness currently has both book-level and engine-level state.
 - Concurrency, market orders and benchmarking are not implemented.
+- Trade-vector capacity is reserved before incoming-order staging.
+  If staging fails, capacity may remain increased despite no trade
+  occurring. The failure guarantee preserves logical trading state,
+  not the previous memory allocation state.

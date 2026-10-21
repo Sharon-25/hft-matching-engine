@@ -680,6 +680,138 @@ void test_trade_history_consistency() {
     assert(remaining->remaining_quantity() == 50);
 }
 
+void test_book_invariants_after_submission_sequence() {
+    MatchingEngine engine;
+
+    auto submit_and_validate =
+        [&](const Order& order) {
+            const SubmissionResult result =
+                engine.submit_limit_order(order);
+
+            assert(
+                result.status ==
+                SubmissionStatus::ACCEPTED
+            );
+
+            assert(
+                engine.order_book().validate_invariants()
+            );
+
+            return result;
+        };
+
+    // Start with non-crossing orders.
+    submit_and_validate(
+        Order(1, Side::BUY, 10000, 200)
+    );
+
+    submit_and_validate(
+        Order(2, Side::BUY, 9900, 100)
+    );
+
+    submit_and_validate(
+        Order(3, Side::SELL, 10500, 150)
+    );
+
+    submit_and_validate(
+        Order(4, Side::SELL, 10600, 200)
+    );
+
+    // Partially execute the best SELL order.
+    submit_and_validate(
+        Order(5, Side::BUY, 10500, 100)
+    );
+
+    // Fully execute the remaining best SELL quantity.
+    submit_and_validate(
+        Order(6, Side::BUY, 10500, 50)
+    );
+
+    // Cross multiple BUY price levels.
+    submit_and_validate(
+        Order(7, Side::SELL, 9800, 250)
+    );
+
+    // Add a new resting order after executions.
+    submit_and_validate(
+        Order(8, Side::BUY, 9700, 300)
+    );
+    assert(engine.order_book().validate_invariants());
+}
+
+void test_index_consistency_after_full_execution() {
+    MatchingEngine engine;
+
+    engine.submit_limit_order(
+        Order(10, Side::SELL, 11000, 100)
+    );
+
+    engine.submit_limit_order(
+        Order(20, Side::SELL, 11000, 100)
+    );
+
+    assert(engine.order_book().order_count() == 2);
+    assert(engine.order_book().validate_invariants());
+
+    const SubmissionResult result =
+        engine.submit_limit_order(
+            Order(30, Side::BUY, 11500, 200)
+        );
+
+    assert(result.executed_quantity == 200);
+    assert(result.remaining_quantity == 0);
+
+    assert(engine.order_book().order_count() == 0);
+
+    assert(!engine.order_book().contains(10));
+    assert(!engine.order_book().contains(20));
+    assert(!engine.order_book().contains(30));
+
+    assert(engine.order_book().was_order_id_used(10));
+    assert(engine.order_book().was_order_id_used(20));
+    assert(engine.order_book().was_order_id_used(30));
+
+    assert(engine.order_book().validate_invariants());
+}
+
+void test_submission_trade_accounting() {
+    MatchingEngine engine;
+
+    engine.submit_limit_order(
+        Order(1, Side::SELL, 11000, 100)
+    );
+
+    engine.submit_limit_order(
+        Order(2, Side::SELL, 11200, 150)
+    );
+
+    const std::size_t trades_before =
+        engine.trades().size();
+
+    const SubmissionResult result =
+        engine.submit_limit_order(
+            Order(3, Side::BUY, 11500, 200)
+        );
+
+    assert(result.status == SubmissionStatus::ACCEPTED);
+
+    Quantity recorded_quantity = 0;
+
+    for (std::size_t i = trades_before;
+         i < engine.trades().size(); ++i) {
+        const Trade& trade = engine.trades()[i];
+
+        assert(trade.incoming_order_id == 3);
+        recorded_quantity += trade.executed_quantity;
+    }
+
+    assert(recorded_quantity == result.executed_quantity);
+    assert(result.executed_quantity +
+           result.remaining_quantity == 200);
+
+    assert(engine.order_book().validate_invariants());
+}
+
 int main() {
     test_engine_starts_with_empty_book();
     test_engine_is_not_copyable_or_movable();
@@ -703,6 +835,9 @@ int main() {
     test_paired_execution_partial_and_full_fill();
     test_paired_execution_preserves_fifo();
     test_trade_history_consistency();
+    test_book_invariants_after_submission_sequence();
+    test_index_consistency_after_full_execution();
+    test_submission_trade_accounting();
 
     std::cout << "MatchingEngine tests passed\n";
     return 0;

@@ -445,6 +445,76 @@ std::size_t OrderBook::count_matchable_orders(
     return count;
 }
 
+bool OrderBook::validate_invariants() const {
+    std::size_t counted_orders = 0;
+
+    const auto validate_side =
+        [&](const auto& side_book, Side expected_side) {
+            for (const auto& [price, orders] : side_book) {
+                if (orders.empty()) {
+                    return false;
+                }
+
+                for (auto it = orders.begin();
+                     it != orders.end(); ++it) {
+
+                    const Order& order = *it;
+
+                    if (order.side() != expected_side ||
+                        order.price_ticks() != price ||
+                        !order.is_active() ||
+                        order.remaining_quantity() == 0) {
+                        return false;
+                    }
+
+                    auto index_it =
+                        order_index_.find(order.id());
+
+                    if (index_it == order_index_.end()) {
+                        return false;
+                    }
+
+                    const OrderLocation& location =
+                        index_it->second;
+
+                    if (location.side != expected_side ||
+                        location.price != price ||
+                        location.iterator != it) {
+                        return false;
+                    }
+
+                    if (!used_order_ids_.contains(order.id())) {
+                        return false;
+                    }
+
+                    ++counted_orders;
+                }
+            }
+
+            return true;
+        };
+
+    if (!validate_side(bids_, Side::BUY) ||
+        !validate_side(asks_, Side::SELL)) {
+        return false;
+    }
+
+    if (counted_orders != order_index_.size()) {
+        return false;
+    }
+
+    const auto bid = best_bid();
+    const auto ask = best_ask();
+
+    if (bid.has_value() &&
+        ask.has_value() &&
+        *bid >= *ask) {
+        return false;
+    }
+
+    return true;
+}
+
 void OrderBook::print_book() const {
     std::cout << "\n===== BUY BOOK =====\n";
 
