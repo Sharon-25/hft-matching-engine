@@ -23,15 +23,23 @@
 - [x] P4-05: Generate trade records with both order IDs,
       execution price and executed quantity.
       Verified.
-- [ ] P4-06: Verify BUY and SELL price-time priority.
-      Final verification tests pending.
+- [x] P4-06: Verify BUY and SELL price-time priority.
+      Verified through best-price selection, FIFO matching,
+      limit-price enforcement and trade-order regression tests.
 - [x] P4-07: Test crossing, non-crossing, partial and full fills.
       Verified.
-- [ ] P4-08: Verify book invariants after each operation.
-      Comprehensive checks pending, including crossed-book detection
-      and consistency between the active index and resting orders.
-- [ ] P4-09: Complete Phase 4 regression tests and Git commit.
-      Pending.
+- [x] P4-08: Verify book invariants after each operation.
+      Verified after each accepted submission in the
+      end-to-end sequence test, including active-index
+      consistency, order counts, price-level correctness,
+      active-order validity and crossed-book detection.
+      Broader randomized and fault-injection testing
+      remains tracked separately.
+- [x] P4-09: Complete Phase 4 regression tests and Git commit.
+      Debug regression suite passed with all three CTest
+      executables successful. Phase 4 changes committed.
+      Release-safe tests and production build hardening
+      remain tracked separately.
 
 ## Later phases
 
@@ -85,6 +93,7 @@
 - Final BUY and SELL price-time-priority verification is pending.
 - ID uniqueness currently has both book-level and engine-level state.
 - Concurrency, market orders and benchmarking are not implemented.
+- MATCHING_ENGINE_TESTING is currently PUBLIC on matching_core, so test-only functionality is also enabled in matching_engine.
 - Trade-vector capacity is reserved before incoming-order staging.
   If staging fails, capacity may remain increased despite no trade
   occurring. The failure guarantee preserves logical trading state,
