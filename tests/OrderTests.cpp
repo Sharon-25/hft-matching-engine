@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 #include "matching_engine/Order.hpp"
@@ -208,6 +209,48 @@ void test_invalid_order_type() {
     CHECK(threw);
 }
 
+void test_order_quantity_boundaries() {
+    const Quantity MAX_QTY =
+        std::numeric_limits<Quantity>::max();
+
+    Order order(
+        9001,
+        Side::BUY,
+        10000,
+        MAX_QTY
+    );
+
+    CHECK(order.original_quantity() == MAX_QTY);
+    CHECK(order.remaining_quantity() == MAX_QTY);
+    CHECK(order.status() == OrderStatus::NEW);
+
+    // Invalid execution must not change state.
+    CHECK(!order.execute(0));
+    CHECK(order.remaining_quantity() == MAX_QTY);
+    CHECK(order.status() == OrderStatus::NEW);
+
+    // Execute one unit.
+    CHECK(order.execute(1));
+    CHECK(order.remaining_quantity() == MAX_QTY - 1);
+    CHECK(order.executed_quantity() == 1);
+    CHECK(order.status() == OrderStatus::PARTIALLY_FILLED);
+
+    // Cannot execute more than the remainder.
+    CHECK(!order.execute(MAX_QTY));
+    CHECK(order.remaining_quantity() == MAX_QTY - 1);
+    CHECK(order.executed_quantity() == 1);
+
+    // Execute exactly the remainder.
+    CHECK(order.execute(MAX_QTY - 1));
+    CHECK(order.remaining_quantity() == 0);
+    CHECK(order.executed_quantity() == MAX_QTY);
+    CHECK(order.status() == OrderStatus::FILLED);
+
+    // Filled orders cannot execute again.
+    CHECK(!order.execute(1));
+    CHECK(order.remaining_quantity() == 0);
+}
+
 int main() {
     test_order_creation();
     test_partial_execution();
@@ -224,6 +267,7 @@ int main() {
     test_market_order_creation();
     test_market_order_rejects_nonzero_price();
     test_invalid_order_type();
+    test_order_quantity_boundaries();
 
     std::cout << "All Order tests passed.\n";
     return 0;

@@ -263,44 +263,108 @@ bool OrderBook::execute_match(
         return false;
     }
 
-    auto incoming_it = order_index_.find(incoming_id);
-    auto resting_it = order_index_.find(resting_id);
+    // --- Pre-mutation validation ---
 
-    if (incoming_it == order_index_.end() ||
-        resting_it == order_index_.end()) {
+    auto incoming_index_it = order_index_.find(incoming_id);
+    auto resting_index_it  = order_index_.find(resting_id);
+
+    if (incoming_index_it == order_index_.end() ||
+        resting_index_it  == order_index_.end()) {
         return false;
     }
 
-    Order& incoming = *incoming_it->second.iterator;
-    Order& resting = *resting_it->second.iterator;
+    const OrderLocation incoming_loc =
+        incoming_index_it->second;
+    const OrderLocation resting_loc =
+        resting_index_it->second;
 
-    const bool incoming_side_valid =
-        incoming.side() == Side::BUY ||
-        incoming.side() == Side::SELL;
-
-    const bool resting_side_valid =
-        resting.side() == Side::BUY ||
-        resting.side() == Side::SELL;
-
-    if (!incoming.is_active() ||
-        !resting.is_active() ||
-        !incoming_side_valid ||
-        !resting_side_valid ||
-        incoming.side() == resting.side()) {
+    // Validate stored sides are well-formed and opposite.
+    if ((incoming_loc.side != Side::BUY &&
+         incoming_loc.side != Side::SELL) ||
+        (resting_loc.side != Side::BUY &&
+         resting_loc.side != Side::SELL) ||
+        incoming_loc.side == resting_loc.side) {
         return false;
     }
 
+    // Locate both map price levels using the stored prices.
+    // These lookups cannot throw and do not mutate the book.
+    using BidIt = BidBook::iterator;
+    using AskIt = AskBook::iterator;
+
+    BidIt incoming_bid_level{};
+    AskIt incoming_ask_level{};
+    BidIt resting_bid_level{};
+    AskIt resting_ask_level{};
+
+    if (incoming_loc.side == Side::BUY) {
+        incoming_bid_level = bids_.find(incoming_loc.price);
+        if (incoming_bid_level == bids_.end() ||
+            incoming_bid_level->second.empty()) {
+            return false;
+        }
+    } else {
+        incoming_ask_level = asks_.find(incoming_loc.price);
+        if (incoming_ask_level == asks_.end() ||
+            incoming_ask_level->second.empty()) {
+            return false;
+        }
+    }
+
+    if (resting_loc.side == Side::BUY) {
+        if (bids_.empty()) {
+            return false;
+        }
+        resting_bid_level = bids_.begin();
+        if (resting_bid_level->first != resting_loc.price ||
+            resting_bid_level->second.empty() ||
+            resting_loc.iterator != resting_bid_level->second.begin()) {
+            return false;
+        }
+    } else {
+        if (asks_.empty()) {
+            return false;
+        }
+        resting_ask_level = asks_.begin();
+        if (resting_ask_level->first != resting_loc.price ||
+            resting_ask_level->second.empty() ||
+            resting_loc.iterator != resting_ask_level->second.begin()) {
+            return false;
+        }
+    }
+
+    // Dereference only after map level and FIFO-front validations above.
+    Order& incoming = *incoming_loc.iterator;
+    Order& resting  = *resting_loc.iterator;
+
+    // Validate metadata consistency between order index and dereferenced order objects.
+    if (incoming.id() != incoming_id ||
+        incoming.side() != incoming_loc.side ||
+        incoming.price_ticks() != incoming_loc.price ||
+        !incoming.is_active()) {
+        return false;
+    }
+
+    if (resting.id() != resting_id ||
+        resting.side() != resting_loc.side ||
+        resting.price_ticks() != resting_loc.price ||
+        !resting.is_active()) {
+        return false;
+    }
+
+    // Confirm the resting order is the book's best on its side
+    // (cross-checks the map-level validation above).
     const Order* expected_resting =
-        best_order(resting.side());
+        best_order(resting_loc.side);
 
     if (expected_resting == nullptr ||
         expected_resting->id() != resting_id) {
         return false;
     }
 
-    // Validate price compatibility.
+    // Validate crossing price.
     const bool crosses =
-        incoming.side() == Side::BUY
+        incoming_loc.side == Side::BUY
             ? incoming.price_ticks() >= resting.price_ticks()
             : incoming.price_ticks() <= resting.price_ticks();
 
@@ -308,15 +372,16 @@ bool OrderBook::execute_match(
         return false;
     }
 
-    // Validate both quantities before changing either order.
+    // Validate quantity bounds before any mutation.
     if (quantity > incoming.remaining_quantity() ||
         quantity > resting.remaining_quantity()) {
         return false;
     }
 
-    // Both executions are now valid.
+    // --- Execution (no new exceptions expected after this point) ---
+
     const bool incoming_ok = incoming.execute(quantity);
-    const bool resting_ok = resting.execute(quantity);
+    const bool resting_ok  = resting.execute(quantity);
 
     if (!incoming_ok || !resting_ok) {
         throw std::logic_error(
@@ -324,14 +389,45 @@ bool OrderBook::execute_match(
         );
     }
 
-    // Remove fully filled orders using the existing
-    // indexed removal logic.
+    // --- Cleanup using already-acquired iterators ---
+    // Do not call remove_filled_order(): it performs a fresh
+    // order_index_ lookup and can throw. Instead, use the map
+    // and index iterators already held above.
+
     if (incoming.is_filled()) {
-        remove_filled_order(incoming_id);
+        order_index_.erase(incoming_index_it);
+
+        if (incoming_loc.side == Side::BUY) {
+            incoming_bid_level->second.erase(
+                incoming_loc.iterator
+            );
+            if (incoming_bid_level->second.empty()) {
+                bids_.erase(incoming_bid_level);
+            }
+        } else {
+            incoming_ask_level->second.erase(
+                incoming_loc.iterator
+            );
+            if (incoming_ask_level->second.empty()) {
+                asks_.erase(incoming_ask_level);
+            }
+        }
     }
 
     if (resting.is_filled()) {
-        remove_filled_order(resting_id);
+        order_index_.erase(resting_index_it);
+
+        if (resting_loc.side == Side::BUY) {
+            resting_bid_level->second.pop_front();
+            if (resting_bid_level->second.empty()) {
+                bids_.erase(resting_bid_level);
+            }
+        } else {
+            resting_ask_level->second.pop_front();
+            if (resting_ask_level->second.empty()) {
+                asks_.erase(resting_ask_level);
+            }
+        }
     }
 
     return true;

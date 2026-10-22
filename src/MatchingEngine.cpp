@@ -109,6 +109,9 @@ SubmissionResult MatchingEngine::submit_limit_order(
         };
     }
 
+    // Order has been admitted into the book; commit the session ID permanently.
+    reservation.commit();
+
     const Side opposite_side =
         order.side() == Side::BUY
             ? Side::SELL
@@ -177,8 +180,6 @@ SubmissionResult MatchingEngine::submit_limit_order(
             "Preflight trade count does not match executions"
         );
     }
-
-    reservation.commit();
 
     return {
         SubmissionStatus::ACCEPTED,

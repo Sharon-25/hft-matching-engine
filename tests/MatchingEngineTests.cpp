@@ -1275,6 +1275,378 @@ void test_market_order_unfilled_lifecycle() {
     CHECK(engine.order_book().validate_invariants());
 }
 
+void test_limit_match_both_orders_fully_filled() {
+    MatchingEngine engine;
+
+    // Resting SELL: ID 10, Price 10500, Qty 100
+    const SubmissionResult resting_res =
+        engine.submit_limit_order(
+            Order(10, Side::SELL, 10500, 100)
+        );
+    CHECK(resting_res.status == SubmissionStatus::ACCEPTED);
+    CHECK(resting_res.executed_quantity == 0);
+    CHECK(resting_res.remaining_quantity == 100);
+    CHECK(engine.order_book().order_count() == 1);
+    CHECK(engine.order_book().contains(10));
+    CHECK(engine.order_book().validate_invariants());
+
+    // Incoming BUY: ID 20, Price 11000, Qty 100 (crosses at 10500)
+    const SubmissionResult incoming_res =
+        engine.submit_limit_order(
+            Order(20, Side::BUY, 11000, 100)
+        );
+    CHECK(incoming_res.status == SubmissionStatus::ACCEPTED);
+    CHECK(incoming_res.executed_quantity == 100);
+    CHECK(incoming_res.remaining_quantity == 0);
+
+    // Trade record verification:
+    // Both orders matched via execute_match() inside submit_limit_order()
+    CHECK(engine.trades().size() == 1);
+    const Trade& trade = engine.trades().back();
+    CHECK(trade.incoming_order_id == 20);
+    CHECK(trade.resting_order_id == 10);
+    CHECK(trade.execution_price_ticks == 10500);
+    CHECK(trade.executed_quantity == 100);
+
+    // OrderBook contents: both fully filled, neither remains active
+    const OrderBook& book = engine.order_book();
+    CHECK(book.order_count() == 0);
+    CHECK(!book.contains(10));
+    CHECK(!book.contains(20));
+    CHECK(!book.best_bid().has_value());
+    CHECK(!book.best_ask().has_value());
+
+    // Permanent ID tracking
+    CHECK(engine.was_order_id_accepted(10));
+    CHECK(engine.was_order_id_accepted(20));
+    CHECK(book.was_order_id_used(10));
+    CHECK(book.was_order_id_used(20));
+
+    // ID reuse must be rejected
+    CHECK(engine.submit_limit_order(Order(10, Side::BUY, 10000, 50)).status ==
+          SubmissionStatus::DUPLICATE_ID);
+    CHECK(engine.submit_limit_order(Order(20, Side::SELL, 12000, 50)).status ==
+          SubmissionStatus::DUPLICATE_ID);
+
+    CHECK(book.validate_invariants());
+}
+
+void test_limit_match_only_incoming_fully_filled() {
+    MatchingEngine engine;
+
+    // Resting SELL: ID 30, Price 10500, Qty 200
+    const SubmissionResult resting_res =
+        engine.submit_limit_order(
+            Order(30, Side::SELL, 10500, 200)
+        );
+    CHECK(resting_res.status == SubmissionStatus::ACCEPTED);
+    CHECK(resting_res.executed_quantity == 0);
+    CHECK(resting_res.remaining_quantity == 200);
+
+    // Incoming BUY: ID 40, Price 11000, Qty 100 (matches 100)
+    const SubmissionResult incoming_res =
+        engine.submit_limit_order(
+            Order(40, Side::BUY, 11000, 100)
+        );
+    CHECK(incoming_res.status == SubmissionStatus::ACCEPTED);
+    CHECK(incoming_res.executed_quantity == 100);
+    CHECK(incoming_res.remaining_quantity == 0);
+
+    // Trade verification
+    CHECK(engine.trades().size() == 1);
+    const Trade& trade = engine.trades().back();
+    CHECK(trade.incoming_order_id == 40);
+    CHECK(trade.resting_order_id == 30);
+    CHECK(trade.execution_price_ticks == 10500);
+    CHECK(trade.executed_quantity == 100);
+
+    // OrderBook contents: incoming filled/removed; resting partially filled and remains
+    const OrderBook& book = engine.order_book();
+    CHECK(book.order_count() == 1);
+    CHECK(!book.contains(40));
+    CHECK(book.contains(30));
+    const Order* resting_order = book.find_order(30);
+    CHECK(resting_order != nullptr);
+    CHECK(resting_order->remaining_quantity() == 100);
+    CHECK(resting_order->executed_quantity() == 100);
+    CHECK(resting_order->status() == OrderStatus::PARTIALLY_FILLED);
+    CHECK(*book.best_ask() == 10500);
+    CHECK(!book.best_bid().has_value());
+
+    // Permanent ID tracking
+    CHECK(engine.was_order_id_accepted(30));
+    CHECK(engine.was_order_id_accepted(40));
+    CHECK(book.was_order_id_used(30));
+    CHECK(book.was_order_id_used(40));
+
+    CHECK(book.validate_invariants());
+}
+
+void test_limit_match_only_resting_fully_filled() {
+    MatchingEngine engine;
+
+    // Resting BUY: ID 50, Price 11000, Qty 100
+    const SubmissionResult resting_res =
+        engine.submit_limit_order(
+            Order(50, Side::BUY, 11000, 100)
+        );
+    CHECK(resting_res.status == SubmissionStatus::ACCEPTED);
+    CHECK(resting_res.executed_quantity == 0);
+    CHECK(resting_res.remaining_quantity == 100);
+
+    // Incoming SELL: ID 60, Price 10500, Qty 250 (matches 100, remaining 150 rests)
+    const SubmissionResult incoming_res =
+        engine.submit_limit_order(
+            Order(60, Side::SELL, 10500, 250)
+        );
+    CHECK(incoming_res.status == SubmissionStatus::ACCEPTED);
+    CHECK(incoming_res.executed_quantity == 100);
+    CHECK(incoming_res.remaining_quantity == 150);
+
+    // Trade verification
+    CHECK(engine.trades().size() == 1);
+    const Trade& trade = engine.trades().back();
+    CHECK(trade.incoming_order_id == 60);
+    CHECK(trade.resting_order_id == 50);
+    CHECK(trade.execution_price_ticks == 11000);
+    CHECK(trade.executed_quantity == 100);
+
+    // OrderBook contents: resting filled/removed; incoming partially filled and resting
+    const OrderBook& book = engine.order_book();
+    CHECK(book.order_count() == 1);
+    CHECK(!book.contains(50));
+    CHECK(book.contains(60));
+    const Order* resting_remainder = book.find_order(60);
+    CHECK(resting_remainder != nullptr);
+    CHECK(resting_remainder->remaining_quantity() == 150);
+    CHECK(resting_remainder->executed_quantity() == 100);
+    CHECK(resting_remainder->status() == OrderStatus::PARTIALLY_FILLED);
+    CHECK(*book.best_ask() == 10500);
+    CHECK(!book.best_bid().has_value());
+
+    // Permanent ID tracking
+    CHECK(engine.was_order_id_accepted(50));
+    CHECK(engine.was_order_id_accepted(60));
+    CHECK(book.was_order_id_used(50));
+    CHECK(book.was_order_id_used(60));
+
+    CHECK(book.validate_invariants());
+}
+
+void test_limit_match_both_orders_partially_filled() {
+    MatchingEngine engine;
+
+    // Resting BUY: ID 70, Price 11000, Qty 300
+    const SubmissionResult res70 =
+        engine.submit_limit_order(
+            Order(70, Side::BUY, 11000, 300)
+        );
+    CHECK(res70.status == SubmissionStatus::ACCEPTED);
+    CHECK(res70.executed_quantity == 0);
+    CHECK(res70.remaining_quantity == 300);
+
+    // First incoming SELL: ID 80, Price 10500, Qty 120
+    // Matches 120 against order 70.
+    // Order 70 now partially filled with 180 remaining.
+    const SubmissionResult res80 =
+        engine.submit_limit_order(
+            Order(80, Side::SELL, 10500, 120)
+        );
+    CHECK(res80.status == SubmissionStatus::ACCEPTED);
+    CHECK(res80.executed_quantity == 120);
+    CHECK(res80.remaining_quantity == 0);
+
+    const OrderBook& book = engine.order_book();
+    CHECK(book.contains(70));
+    CHECK(book.find_order(70)->status() == OrderStatus::PARTIALLY_FILLED);
+    CHECK(book.find_order(70)->remaining_quantity() == 180);
+    CHECK(book.validate_invariants());
+
+    // Second incoming SELL: ID 90, Price 10500, Qty 250
+    // Matches 180 against resting order 70.
+    // Order 70 is now fully filled (total 300 executed) and removed.
+    // Order 90 is partially filled (180 executed, 70 remaining) and rests in book.
+    const SubmissionResult res90 =
+        engine.submit_limit_order(
+            Order(90, Side::SELL, 10500, 250)
+        );
+    CHECK(res90.status == SubmissionStatus::ACCEPTED);
+    CHECK(res90.executed_quantity == 180);
+    CHECK(res90.remaining_quantity == 70);
+
+    // Trade verification: exactly 2 trades
+    CHECK(engine.trades().size() == 2);
+    const Trade& trade1 = engine.trades()[0];
+    CHECK(trade1.incoming_order_id == 80);
+    CHECK(trade1.resting_order_id == 70);
+    CHECK(trade1.execution_price_ticks == 11000);
+    CHECK(trade1.executed_quantity == 120);
+
+    const Trade& trade2 = engine.trades()[1];
+    CHECK(trade2.incoming_order_id == 90);
+    CHECK(trade2.resting_order_id == 70);
+    CHECK(trade2.execution_price_ticks == 11000);
+    CHECK(trade2.executed_quantity == 180);
+
+    // Final order book state:
+    // Order 70 filled & removed; Order 80 filled & removed; Order 90 resting partially filled
+    CHECK(book.order_count() == 1);
+    CHECK(!book.contains(70));
+    CHECK(!book.contains(80));
+    CHECK(book.contains(90));
+    const Order* resting_90 = book.find_order(90);
+    CHECK(resting_90 != nullptr);
+    CHECK(resting_90->remaining_quantity() == 70);
+    CHECK(resting_90->executed_quantity() == 180);
+    CHECK(resting_90->status() == OrderStatus::PARTIALLY_FILLED);
+    CHECK(*book.best_ask() == 10500);
+    CHECK(!book.best_bid().has_value());
+
+    // All order IDs permanently tracked
+    CHECK(engine.was_order_id_accepted(70));
+    CHECK(engine.was_order_id_accepted(80));
+    CHECK(engine.was_order_id_accepted(90));
+    CHECK(book.was_order_id_used(70));
+    CHECK(book.was_order_id_used(80));
+    CHECK(book.was_order_id_used(90));
+
+    CHECK(book.validate_invariants());
+}
+
+void test_limit_order_id_reservation_hardening() {
+    MatchingEngine engine;
+
+    // 1. Non-crossing limit order: admission commits ID permanently.
+    const SubmissionResult nc_res =
+        engine.submit_limit_order(
+            Order(1001, Side::BUY, 10000, 100)
+        );
+    CHECK(nc_res.status == SubmissionStatus::ACCEPTED);
+    CHECK(nc_res.executed_quantity == 0);
+    CHECK(nc_res.remaining_quantity == 100);
+    CHECK(engine.was_order_id_accepted(1001));
+    CHECK(engine.order_book().contains(1001));
+    CHECK(engine.order_book().was_order_id_used(1001));
+
+    // Duplicate submission with same ID must be rejected.
+    CHECK(
+        engine.submit_limit_order(
+            Order(1001, Side::SELL, 11000, 50)
+        ).status == SubmissionStatus::DUPLICATE_ID
+    );
+
+    // 2. Crossing limit order: admission commits ID even when fully filled
+    //    and removed from the active book.
+    const SubmissionResult resting_res =
+        engine.submit_limit_order(
+            Order(1002, Side::SELL, 10500, 50)
+        );
+    CHECK(resting_res.status == SubmissionStatus::ACCEPTED);
+    CHECK(engine.was_order_id_accepted(1002));
+    CHECK(engine.order_book().contains(1002));
+
+    const SubmissionResult cross_fill_res =
+        engine.submit_limit_order(
+            Order(1003, Side::BUY, 10500, 50)
+        );
+    CHECK(cross_fill_res.status == SubmissionStatus::ACCEPTED);
+    CHECK(cross_fill_res.executed_quantity == 50);
+    CHECK(cross_fill_res.remaining_quantity == 0);
+
+    // Both orders are fully filled and removed from the active book.
+    CHECK(!engine.order_book().contains(1002));
+    CHECK(!engine.order_book().contains(1003));
+
+    // But both IDs are permanently recorded as accepted and used.
+    CHECK(engine.was_order_id_accepted(1002));
+    CHECK(engine.was_order_id_accepted(1003));
+    CHECK(engine.order_book().was_order_id_used(1002));
+    CHECK(engine.order_book().was_order_id_used(1003));
+
+    // Reusing either fully filled ID must be rejected as duplicate.
+    CHECK(
+        engine.submit_limit_order(
+            Order(1002, Side::BUY, 10000, 10)
+        ).status == SubmissionStatus::DUPLICATE_ID
+    );
+    CHECK(
+        engine.submit_limit_order(
+            Order(1003, Side::SELL, 12000, 10)
+        ).status == SubmissionStatus::DUPLICATE_ID
+    );
+
+    // 3. Insertion failures at all failure checkpoints:
+    //    When add_active_order throws, reservation must NOT be committed,
+    //    leaving the ID reusable and preserving the existing book.
+    const InsertionFailurePoint failure_points[] = {
+        InsertionFailurePoint::AFTER_LIST_INSERT,
+        InsertionFailurePoint::AFTER_INDEX_INSERT,
+        InsertionFailurePoint::AFTER_USED_ID_INSERT
+    };
+
+    OrderId fail_id = 2001;
+    for (InsertionFailurePoint point : failure_points) {
+        const std::size_t count_before =
+            engine.order_book().order_count();
+        CHECK(engine.order_book().contains(1001));
+
+        engine.set_insertion_failure_for_test(point);
+
+        bool exception_caught = false;
+        try {
+            engine.submit_limit_order(
+                Order(fail_id, Side::BUY, 9500, 100)
+            );
+        } catch (const std::bad_alloc&) {
+            exception_caught = true;
+        }
+
+        CHECK(exception_caught);
+
+        // Incoming ID was not admitted; must NOT be accepted or used.
+        CHECK(!engine.was_order_id_accepted(fail_id));
+        CHECK(!engine.order_book().was_order_id_used(fail_id));
+        CHECK(!engine.order_book().contains(fail_id));
+
+        // Existing book is preserved.
+        CHECK(engine.order_book().order_count() == count_before);
+        CHECK(engine.order_book().contains(1001));
+        CHECK(engine.order_book().validate_invariants());
+
+        // ID remains available and can be successfully submitted now.
+        const SubmissionResult retry_res =
+            engine.submit_limit_order(
+                Order(fail_id, Side::BUY, 9500, 100)
+            );
+        CHECK(retry_res.status == SubmissionStatus::ACCEPTED);
+        CHECK(engine.was_order_id_accepted(fail_id));
+        CHECK(engine.order_book().contains(fail_id));
+        CHECK(engine.order_book().was_order_id_used(fail_id));
+
+        ++fail_id;
+    }
+
+    // 4. Invalid order (e.g. cancelled order):
+    //    add_active_order returns false, reservation must NOT be committed.
+    Order cancelled(3001, Side::BUY, 9000, 100);
+    CHECK(cancelled.cancel());
+    const SubmissionResult inv_res =
+        engine.submit_limit_order(cancelled);
+    CHECK(inv_res.status == SubmissionStatus::INVALID_ORDER);
+    CHECK(!engine.was_order_id_accepted(3001));
+    CHECK(!engine.order_book().was_order_id_used(3001));
+
+    // ID 3001 can now be submitted with a valid order.
+    Order valid_3001(3001, Side::BUY, 9000, 100);
+    CHECK(
+        engine.submit_limit_order(valid_3001).status ==
+        SubmissionStatus::ACCEPTED
+    );
+    CHECK(engine.was_order_id_accepted(3001));
+
+    CHECK(engine.order_book().validate_invariants());
+}
+
 int main() {
     test_engine_starts_with_empty_book();
     test_engine_is_not_copyable_or_movable();
@@ -1312,6 +1684,11 @@ int main() {
     test_market_order_fully_executed_lifecycle();
     test_market_order_partially_executed_lifecycle();
     test_market_order_unfilled_lifecycle();
+    test_limit_match_both_orders_fully_filled();
+    test_limit_match_only_incoming_fully_filled();
+    test_limit_match_only_resting_fully_filled();
+    test_limit_match_both_orders_partially_filled();
+    test_limit_order_id_reservation_hardening();
 
     std::cout << "MatchingEngine tests passed\n";
     return 0;
