@@ -10,10 +10,15 @@
             std::abort();                                            \
         }                                                            \
     } while (false)
+#include <algorithm>
 #include <iostream>
+#include <limits>
 #include <new>
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 #include "matching_engine/MatchingEngine.hpp"
 
@@ -1647,6 +1652,859 @@ void test_limit_order_id_reservation_hardening() {
     CHECK(engine.order_book().validate_invariants());
 }
 
+namespace {
+
+struct ReferenceOrder {
+    OrderId id;
+    Side side;
+    Price price;
+    Quantity original_quantity;
+    Quantity remaining_quantity;
+    Quantity executed_quantity;
+
+    OrderStatus status() const noexcept {
+        if (remaining_quantity == 0) {
+            return OrderStatus::FILLED;
+        }
+        if (executed_quantity > 0) {
+            return OrderStatus::PARTIALLY_FILLED;
+        }
+        return OrderStatus::NEW;
+    }
+};
+
+class ReferenceMatchingEngine {
+private:
+    std::vector<ReferenceOrder> active_orders_;
+    std::vector<OrderId> accepted_order_ids_;
+    std::vector<OrderId> used_limit_ids_;
+    std::vector<Trade> trades_;
+
+public:
+    SubmissionResult submit_limit_order(const Order& order) {
+        if (order.type() != OrderType::LIMIT ||
+            order.status() != OrderStatus::NEW ||
+            (order.side() != Side::BUY && order.side() != Side::SELL)) {
+            return {
+                SubmissionStatus::INVALID_ORDER,
+                0,
+                order.remaining_quantity()
+            };
+        }
+
+        if (was_order_id_accepted(order.id()) || was_order_id_used(order.id())) {
+            return {
+                SubmissionStatus::DUPLICATE_ID,
+                0,
+                order.remaining_quantity()
+            };
+        }
+
+        accepted_order_ids_.push_back(order.id());
+        used_limit_ids_.push_back(order.id());
+
+        Quantity executed_quantity = 0;
+        Quantity remaining_quantity = order.remaining_quantity();
+
+        while (remaining_quantity > 0) {
+            int best_idx = -1;
+
+            if (order.side() == Side::BUY) {
+                for (int i = 0; i < static_cast<int>(active_orders_.size()); ++i) {
+                    if (active_orders_[i].side == Side::SELL) {
+                        if (best_idx == -1 || active_orders_[i].price < active_orders_[best_idx].price) {
+                            best_idx = i;
+                        }
+                    }
+                }
+
+                if (best_idx == -1 || order.price_ticks() < active_orders_[best_idx].price) {
+                    break;
+                }
+            } else {
+                for (int i = 0; i < static_cast<int>(active_orders_.size()); ++i) {
+                    if (active_orders_[i].side == Side::BUY) {
+                        if (best_idx == -1 || active_orders_[i].price > active_orders_[best_idx].price) {
+                            best_idx = i;
+                        }
+                    }
+                }
+
+                if (best_idx == -1 || order.price_ticks() > active_orders_[best_idx].price) {
+                    break;
+                }
+            }
+
+            ReferenceOrder& resting = active_orders_[best_idx];
+            const Quantity executable = std::min(remaining_quantity, resting.remaining_quantity);
+            const Price exec_price = resting.price;
+
+            trades_.push_back(Trade{
+                order.id(),
+                resting.id,
+                exec_price,
+                executable
+            });
+
+            executed_quantity += executable;
+            remaining_quantity -= executable;
+            resting.remaining_quantity -= executable;
+            resting.executed_quantity += executable;
+
+            if (resting.remaining_quantity == 0) {
+                active_orders_.erase(active_orders_.begin() + best_idx);
+            }
+        }
+
+        if (remaining_quantity > 0) {
+            active_orders_.push_back(ReferenceOrder{
+                order.id(),
+                order.side(),
+                order.price_ticks(),
+                order.original_quantity(),
+                remaining_quantity,
+                executed_quantity
+            });
+        }
+
+        return {
+            SubmissionStatus::ACCEPTED,
+            executed_quantity,
+            remaining_quantity
+        };
+    }
+
+    SubmissionResult submit_market_order(const Order& order) {
+        if (order.type() != OrderType::MARKET ||
+            order.status() != OrderStatus::NEW ||
+            (order.side() != Side::BUY && order.side() != Side::SELL)) {
+            return {
+                SubmissionStatus::INVALID_ORDER,
+                0,
+                order.remaining_quantity()
+            };
+        }
+
+        if (was_order_id_accepted(order.id()) || was_order_id_used(order.id())) {
+            return {
+                SubmissionStatus::DUPLICATE_ID,
+                0,
+                order.remaining_quantity()
+            };
+        }
+
+        accepted_order_ids_.push_back(order.id());
+
+        Quantity executed_quantity = 0;
+        Quantity remaining_quantity = order.remaining_quantity();
+
+        while (remaining_quantity > 0) {
+            int best_idx = -1;
+
+            if (order.side() == Side::BUY) {
+                for (int i = 0; i < static_cast<int>(active_orders_.size()); ++i) {
+                    if (active_orders_[i].side == Side::SELL) {
+                        if (best_idx == -1 || active_orders_[i].price < active_orders_[best_idx].price) {
+                            best_idx = i;
+                        }
+                    }
+                }
+
+                if (best_idx == -1) {
+                    break;
+                }
+            } else {
+                for (int i = 0; i < static_cast<int>(active_orders_.size()); ++i) {
+                    if (active_orders_[i].side == Side::BUY) {
+                        if (best_idx == -1 || active_orders_[i].price > active_orders_[best_idx].price) {
+                            best_idx = i;
+                        }
+                    }
+                }
+
+                if (best_idx == -1) {
+                    break;
+                }
+            }
+
+            ReferenceOrder& resting = active_orders_[best_idx];
+            const Quantity executable = std::min(remaining_quantity, resting.remaining_quantity);
+            const Price exec_price = resting.price;
+
+            trades_.push_back(Trade{
+                order.id(),
+                resting.id,
+                exec_price,
+                executable
+            });
+
+            executed_quantity += executable;
+            remaining_quantity -= executable;
+            resting.remaining_quantity -= executable;
+            resting.executed_quantity += executable;
+
+            if (resting.remaining_quantity == 0) {
+                active_orders_.erase(active_orders_.begin() + best_idx);
+            }
+        }
+
+        return {
+            SubmissionStatus::ACCEPTED,
+            executed_quantity,
+            remaining_quantity
+        };
+    }
+
+    std::optional<Price> best_bid() const {
+        std::optional<Price> best;
+        for (const auto& ord : active_orders_) {
+            if (ord.side == Side::BUY) {
+                if (!best.has_value() || ord.price > *best) {
+                    best = ord.price;
+                }
+            }
+        }
+        return best;
+    }
+
+    std::optional<Price> best_ask() const {
+        std::optional<Price> best;
+        for (const auto& ord : active_orders_) {
+            if (ord.side == Side::SELL) {
+                if (!best.has_value() || ord.price < *best) {
+                    best = ord.price;
+                }
+            }
+        }
+        return best;
+    }
+
+    std::size_t order_count() const noexcept {
+        return active_orders_.size();
+    }
+
+    bool contains(OrderId id) const noexcept {
+        for (const auto& ord : active_orders_) {
+            if (ord.id == id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    const ReferenceOrder* find_order(OrderId id) const noexcept {
+        for (const auto& ord : active_orders_) {
+            if (ord.id == id) {
+                return &ord;
+            }
+        }
+        return nullptr;
+    }
+
+    bool was_order_id_accepted(OrderId id) const noexcept {
+        for (OrderId aid : accepted_order_ids_) {
+            if (aid == id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool was_order_id_used(OrderId id) const noexcept {
+        for (OrderId uid : used_limit_ids_) {
+            if (uid == id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::vector<OrderId> order_ids_at_price(Side side, Price price) const {
+        std::vector<OrderId> result;
+        for (const auto& ord : active_orders_) {
+            if (ord.side == side && ord.price == price) {
+                result.push_back(ord.id);
+            }
+        }
+        return result;
+    }
+
+    const std::vector<Trade>& trades() const noexcept {
+        return trades_;
+    }
+};
+
+class DifferentialHarness {
+private:
+    MatchingEngine engine_;
+    ReferenceMatchingEngine ref_;
+    std::vector<OrderId> tracked_ids_;
+    std::vector<std::pair<Side, Price>> tracked_levels_;
+
+    void track_order(const Order& order) {
+        if (std::find(tracked_ids_.begin(), tracked_ids_.end(), order.id()) == tracked_ids_.end()) {
+            tracked_ids_.push_back(order.id());
+        }
+        if (order.type() == OrderType::LIMIT) {
+            auto level = std::make_pair(order.side(), order.price_ticks());
+            if (std::find(tracked_levels_.begin(), tracked_levels_.end(), level) == tracked_levels_.end()) {
+                tracked_levels_.push_back(level);
+            }
+        }
+    }
+
+    void verify_state(const SubmissionResult& prod_res, const SubmissionResult& ref_res) {
+        CHECK(engine_.order_book().validate_invariants());
+
+        CHECK(prod_res.status == ref_res.status);
+        CHECK(prod_res.executed_quantity == ref_res.executed_quantity);
+        CHECK(prod_res.remaining_quantity == ref_res.remaining_quantity);
+
+        CHECK(engine_.order_book().best_bid() == ref_.best_bid());
+        CHECK(engine_.order_book().best_ask() == ref_.best_ask());
+
+        CHECK(engine_.order_book().order_count() == ref_.order_count());
+
+        const auto& prod_trades = engine_.trades();
+        const auto& ref_trades = ref_.trades();
+        CHECK(prod_trades.size() == ref_trades.size());
+        for (std::size_t i = 0; i < prod_trades.size(); ++i) {
+            CHECK(prod_trades[i].incoming_order_id == ref_trades[i].incoming_order_id);
+            CHECK(prod_trades[i].resting_order_id == ref_trades[i].resting_order_id);
+            CHECK(prod_trades[i].execution_price_ticks == ref_trades[i].execution_price_ticks);
+            CHECK(prod_trades[i].executed_quantity == ref_trades[i].executed_quantity);
+        }
+
+        for (OrderId id : tracked_ids_) {
+            CHECK(engine_.was_order_id_accepted(id) == ref_.was_order_id_accepted(id));
+            CHECK(engine_.order_book().was_order_id_used(id) == ref_.was_order_id_used(id));
+            CHECK(engine_.order_book().contains(id) == ref_.contains(id));
+
+            if (ref_.contains(id)) {
+                const Order* prod_ord = engine_.order_book().find_order(id);
+                const ReferenceOrder* ref_ord = ref_.find_order(id);
+                CHECK(prod_ord != nullptr);
+                CHECK(ref_ord != nullptr);
+                CHECK(prod_ord->remaining_quantity() == ref_ord->remaining_quantity);
+                CHECK(prod_ord->executed_quantity() == ref_ord->executed_quantity);
+                CHECK(prod_ord->price_ticks() == ref_ord->price);
+                CHECK(prod_ord->side() == ref_ord->side);
+                CHECK(prod_ord->status() == ref_ord->status());
+            }
+        }
+
+        for (const auto& [side, price] : tracked_levels_) {
+            CHECK(engine_.order_book().order_ids_at_price(side, price) ==
+                  ref_.order_ids_at_price(side, price));
+        }
+    }
+
+public:
+	const MatchingEngine& engine() const noexcept {
+        return engine_;
+	}
+    SubmissionResult submit_limit_order(const Order& order) {
+        track_order(order);
+        const SubmissionResult ref_res = ref_.submit_limit_order(order);
+        const SubmissionResult prod_res = engine_.submit_limit_order(order);
+        verify_state(prod_res, ref_res);
+        return prod_res;
+    }
+
+    SubmissionResult submit_market_order(const Order& order) {
+        track_order(order);
+        const SubmissionResult ref_res = ref_.submit_market_order(order);
+        const SubmissionResult prod_res = engine_.submit_market_order(order);
+        verify_state(prod_res, ref_res);
+        return prod_res;
+    }
+};
+
+} // unnamed namespace
+
+void test_differential_fifo_at_same_price() {
+    DifferentialHarness harness;
+
+    // BUY side FIFO: orders 1, 2, 3 at price 10000
+    const auto r1 = harness.submit_limit_order(Order(1, Side::BUY, 10000, 100));
+    CHECK(r1.status == SubmissionStatus::ACCEPTED);
+    CHECK(r1.executed_quantity == 0);
+    CHECK(r1.remaining_quantity == 100);
+
+    const auto r2 = harness.submit_limit_order(Order(2, Side::BUY, 10000, 150));
+    CHECK(r2.status == SubmissionStatus::ACCEPTED);
+    CHECK(r2.executed_quantity == 0);
+    CHECK(r2.remaining_quantity == 150);
+
+    const auto r3 = harness.submit_limit_order(Order(3, Side::BUY, 10000, 200));
+    CHECK(r3.status == SubmissionStatus::ACCEPTED);
+    CHECK(r3.executed_quantity == 0);
+    CHECK(r3.remaining_quantity == 200);
+
+    // Initial FIFO queue verification: 1, 2, 3 in arrival order
+    CHECK((harness.engine().order_book().order_ids_at_price(Side::BUY, 10000) ==
+           std::vector<OrderId>{1, 2, 3}));
+
+    // Partially fill queue: order 4 SELL 150 at 10000
+    // Manually verified expectation: fills #1 (100) first, then takes 50 of #2
+    const auto r4 = harness.submit_limit_order(Order(4, Side::SELL, 10000, 150));
+    CHECK(r4.status == SubmissionStatus::ACCEPTED);
+    CHECK(r4.executed_quantity == 150);
+    CHECK(r4.remaining_quantity == 0);
+    CHECK(harness.engine().trades().size() == 2);
+    CHECK(harness.engine().trades()[0].incoming_order_id == 4);
+    CHECK(harness.engine().trades()[0].resting_order_id == 1);
+    CHECK(harness.engine().trades()[0].execution_price_ticks == 10000);
+    CHECK(harness.engine().trades()[0].executed_quantity == 100);
+    CHECK(harness.engine().trades()[1].incoming_order_id == 4);
+    CHECK(harness.engine().trades()[1].resting_order_id == 2);
+    CHECK(harness.engine().trades()[1].execution_price_ticks == 10000);
+    CHECK(harness.engine().trades()[1].executed_quantity == 50);
+    CHECK(!harness.engine().order_book().contains(1));
+    CHECK(harness.engine().order_book().contains(2));
+    CHECK(harness.engine().order_book().find_order(2)->remaining_quantity() == 100);
+    CHECK((harness.engine().order_book().order_ids_at_price(Side::BUY, 10000) ==
+           std::vector<OrderId>{2, 3}));
+
+    // Fill remainder of #2 and part of #3: order 5 SELL 150 at 9900
+    // Manually verified expectation: takes remaining 100 of #2, then takes 50 of #3
+    const auto r5 = harness.submit_limit_order(Order(5, Side::SELL, 9900, 150));
+    CHECK(r5.status == SubmissionStatus::ACCEPTED);
+    CHECK(r5.executed_quantity == 150);
+    CHECK(r5.remaining_quantity == 0);
+    CHECK(harness.engine().trades().size() == 4);
+    CHECK(harness.engine().trades()[2].incoming_order_id == 5);
+    CHECK(harness.engine().trades()[2].resting_order_id == 2);
+    CHECK(harness.engine().trades()[2].execution_price_ticks == 10000);
+    CHECK(harness.engine().trades()[2].executed_quantity == 100);
+    CHECK(harness.engine().trades()[3].incoming_order_id == 5);
+    CHECK(harness.engine().trades()[3].resting_order_id == 3);
+    CHECK(harness.engine().trades()[3].execution_price_ticks == 10000);
+    CHECK(harness.engine().trades()[3].executed_quantity == 50);
+    CHECK(!harness.engine().order_book().contains(2));
+    CHECK(harness.engine().order_book().contains(3));
+    CHECK(harness.engine().order_book().find_order(3)->remaining_quantity() == 150);
+    CHECK((harness.engine().order_book().order_ids_at_price(Side::BUY, 10000) ==
+           std::vector<OrderId>{3}));
+
+    // SELL side FIFO: orders 6, 7, 8 at price 10500
+    harness.submit_limit_order(Order(6, Side::SELL, 10500, 80));
+    harness.submit_limit_order(Order(7, Side::SELL, 10500, 120));
+    harness.submit_limit_order(Order(8, Side::SELL, 10500, 200));
+    CHECK((harness.engine().order_book().order_ids_at_price(Side::SELL, 10500) ==
+           std::vector<OrderId>{6, 7, 8}));
+
+    // Partially fill ask queue: order 9 BUY 150 at 10500
+    // Manually verified expectation: fills #6 (80) first, then takes 70 of #7 (rem 50)
+    const auto r9 = harness.submit_limit_order(Order(9, Side::BUY, 10500, 150));
+    CHECK(r9.status == SubmissionStatus::ACCEPTED);
+    CHECK(r9.executed_quantity == 150);
+    CHECK(r9.remaining_quantity == 0);
+    CHECK(harness.engine().trades().size() == 6);
+    CHECK(harness.engine().trades()[4].incoming_order_id == 9);
+    CHECK(harness.engine().trades()[4].resting_order_id == 6);
+    CHECK(harness.engine().trades()[4].execution_price_ticks == 10500);
+    CHECK(harness.engine().trades()[4].executed_quantity == 80);
+    CHECK(harness.engine().trades()[5].incoming_order_id == 9);
+    CHECK(harness.engine().trades()[5].resting_order_id == 7);
+    CHECK(harness.engine().trades()[5].execution_price_ticks == 10500);
+    CHECK(harness.engine().trades()[5].executed_quantity == 70);
+    CHECK(!harness.engine().order_book().contains(6));
+    CHECK(harness.engine().order_book().contains(7));
+    CHECK(harness.engine().order_book().find_order(7)->remaining_quantity() == 50);
+    CHECK((harness.engine().order_book().order_ids_at_price(Side::SELL, 10500) ==
+           std::vector<OrderId>{7, 8}));
+
+    // Finish ask queue at 10500: order 10 BUY 250 at 10600
+    // Manually verified expectation: fills #7 (50), fills #8 (200)
+    const auto r10 = harness.submit_limit_order(Order(10, Side::BUY, 10600, 250));
+    CHECK(r10.status == SubmissionStatus::ACCEPTED);
+    CHECK(r10.executed_quantity == 250);
+    CHECK(r10.remaining_quantity == 0);
+    CHECK(harness.engine().trades().size() == 8);
+    CHECK(harness.engine().trades()[6].incoming_order_id == 10);
+    CHECK(harness.engine().trades()[6].resting_order_id == 7);
+    CHECK(harness.engine().trades()[6].execution_price_ticks == 10500);
+    CHECK(harness.engine().trades()[6].executed_quantity == 50);
+    CHECK(harness.engine().trades()[7].incoming_order_id == 10);
+    CHECK(harness.engine().trades()[7].resting_order_id == 8);
+    CHECK(harness.engine().trades()[7].execution_price_ticks == 10500);
+    CHECK(harness.engine().trades()[7].executed_quantity == 200);
+    CHECK(!harness.engine().order_book().contains(7));
+    CHECK(!harness.engine().order_book().contains(8));
+    CHECK(harness.engine().order_book().order_ids_at_price(Side::SELL, 10500).empty());
+}
+
+void test_differential_multiple_price_levels() {
+    DifferentialHarness harness;
+
+    // Build ask ladder across multiple price levels
+    harness.submit_limit_order(Order(1, Side::SELL, 10100, 50));
+    harness.submit_limit_order(Order(2, Side::SELL, 10200, 100));
+    harness.submit_limit_order(Order(3, Side::SELL, 10200, 50));
+    harness.submit_limit_order(Order(4, Side::SELL, 10300, 200));
+    harness.submit_limit_order(Order(5, Side::SELL, 10400, 300));
+
+    // Build bid ladder across multiple price levels
+    harness.submit_limit_order(Order(6, Side::BUY, 9900, 100));
+    harness.submit_limit_order(Order(7, Side::BUY, 9800, 200));
+    harness.submit_limit_order(Order(8, Side::BUY, 9700, 150));
+
+    // Aggressive BUY sweeps multiple levels up to limit price 10350:
+    // Manually verified expectation:
+    // executes 400 units, leaves 20 resting, and matches resting IDs 1, 2, 3, 4 in sequence.
+    const auto r9 = harness.submit_limit_order(Order(9, Side::BUY, 10350, 420));
+    CHECK(r9.status == SubmissionStatus::ACCEPTED);
+    CHECK(r9.executed_quantity == 400);
+    CHECK(r9.remaining_quantity == 20);
+
+    CHECK(harness.engine().trades().size() == 4);
+    CHECK(harness.engine().trades()[0].incoming_order_id == 9);
+    CHECK(harness.engine().trades()[0].resting_order_id == 1);
+    CHECK(harness.engine().trades()[0].execution_price_ticks == 10100);
+    CHECK(harness.engine().trades()[0].executed_quantity == 50);
+
+    CHECK(harness.engine().trades()[1].incoming_order_id == 9);
+    CHECK(harness.engine().trades()[1].resting_order_id == 2);
+    CHECK(harness.engine().trades()[1].execution_price_ticks == 10200);
+    CHECK(harness.engine().trades()[1].executed_quantity == 100);
+
+    CHECK(harness.engine().trades()[2].incoming_order_id == 9);
+    CHECK(harness.engine().trades()[2].resting_order_id == 3);
+    CHECK(harness.engine().trades()[2].execution_price_ticks == 10200);
+    CHECK(harness.engine().trades()[2].executed_quantity == 50);
+
+    CHECK(harness.engine().trades()[3].incoming_order_id == 9);
+    CHECK(harness.engine().trades()[3].resting_order_id == 4);
+    CHECK(harness.engine().trades()[3].execution_price_ticks == 10300);
+    CHECK(harness.engine().trades()[3].executed_quantity == 200);
+
+    CHECK(!harness.engine().order_book().contains(1));
+    CHECK(!harness.engine().order_book().contains(2));
+    CHECK(!harness.engine().order_book().contains(3));
+    CHECK(!harness.engine().order_book().contains(4));
+    CHECK(harness.engine().order_book().contains(5));
+    CHECK(harness.engine().order_book().contains(9));
+    CHECK(harness.engine().order_book().find_order(9)->remaining_quantity() == 20);
+    CHECK(harness.engine().order_book().find_order(9)->price_ticks() == 10350);
+    CHECK(*harness.engine().order_book().best_bid() == 10350);
+    CHECK(*harness.engine().order_book().best_ask() == 10400);
+
+    // Aggressive SELL sweeps through 10350, 9900, 9800 down to limit price 9750:
+    // Manually verified expectation:
+    // executes 320 units (20 of #9, 100 of #6, 200 of #7), leaves 30 resting at 9750
+    const auto r10 = harness.submit_limit_order(Order(10, Side::SELL, 9750, 350));
+    CHECK(r10.status == SubmissionStatus::ACCEPTED);
+    CHECK(r10.executed_quantity == 320);
+    CHECK(r10.remaining_quantity == 30);
+
+    CHECK(harness.engine().trades().size() == 7);
+    CHECK(harness.engine().trades()[4].incoming_order_id == 10);
+    CHECK(harness.engine().trades()[4].resting_order_id == 9);
+    CHECK(harness.engine().trades()[4].execution_price_ticks == 10350);
+    CHECK(harness.engine().trades()[4].executed_quantity == 20);
+
+    CHECK(harness.engine().trades()[5].incoming_order_id == 10);
+    CHECK(harness.engine().trades()[5].resting_order_id == 6);
+    CHECK(harness.engine().trades()[5].execution_price_ticks == 9900);
+    CHECK(harness.engine().trades()[5].executed_quantity == 100);
+
+    CHECK(harness.engine().trades()[6].incoming_order_id == 10);
+    CHECK(harness.engine().trades()[6].resting_order_id == 7);
+    CHECK(harness.engine().trades()[6].execution_price_ticks == 9800);
+    CHECK(harness.engine().trades()[6].executed_quantity == 200);
+
+    CHECK(!harness.engine().order_book().contains(9));
+    CHECK(!harness.engine().order_book().contains(6));
+    CHECK(!harness.engine().order_book().contains(7));
+    CHECK(harness.engine().order_book().contains(10));
+    CHECK(harness.engine().order_book().find_order(10)->remaining_quantity() == 30);
+    CHECK(harness.engine().order_book().find_order(10)->price_ticks() == 9750);
+    CHECK(harness.engine().order_book().contains(8));
+    CHECK(harness.engine().order_book().find_order(8)->remaining_quantity() == 150);
+    CHECK(*harness.engine().order_book().best_bid() == 9700);
+    CHECK(*harness.engine().order_book().best_ask() == 9750);
+}
+
+void test_differential_partial_fills_and_continuation() {
+    DifferentialHarness harness;
+
+    // Resting order experiences repeated partial fills
+    const auto r1 = harness.submit_limit_order(Order(1, Side::BUY, 10000, 500));
+    CHECK(r1.status == SubmissionStatus::ACCEPTED);
+    CHECK(r1.executed_quantity == 0);
+    CHECK(r1.remaining_quantity == 500);
+
+    // Partial fill 1: 120 units
+    const auto r2 = harness.submit_limit_order(Order(2, Side::SELL, 10000, 120));
+    CHECK(r2.status == SubmissionStatus::ACCEPTED);
+    CHECK(r2.executed_quantity == 120);
+    CHECK(r2.remaining_quantity == 0);
+    CHECK(harness.engine().order_book().find_order(1)->remaining_quantity() == 380);
+
+    // Partial fill 2: 80 units
+    const auto r3 = harness.submit_limit_order(Order(3, Side::SELL, 10000, 80));
+    CHECK(r3.status == SubmissionStatus::ACCEPTED);
+    CHECK(r3.executed_quantity == 80);
+    CHECK(r3.remaining_quantity == 0);
+    CHECK(harness.engine().order_book().find_order(1)->remaining_quantity() == 300);
+
+    // Add another order behind #1 at same price, and another at lower price
+    harness.submit_limit_order(Order(4, Side::BUY, 10000, 200));
+    harness.submit_limit_order(Order(5, Side::BUY, 9900, 300));
+
+    // Fill remaining 300 of #1 and partially fill #4 (100 units)
+    const auto r6 = harness.submit_limit_order(Order(6, Side::SELL, 9950, 400));
+    CHECK(r6.status == SubmissionStatus::ACCEPTED);
+    CHECK(r6.executed_quantity == 400);
+    CHECK(r6.remaining_quantity == 0);
+    CHECK(!harness.engine().order_book().contains(1));
+    CHECK(harness.engine().order_book().contains(4));
+    CHECK(harness.engine().order_book().find_order(4)->remaining_quantity() == 100);
+
+    // Fill remaining 100 of #4 and partially fill #5 (150 units)
+    const auto r7 = harness.submit_limit_order(Order(7, Side::SELL, 9900, 250));
+    CHECK(r7.status == SubmissionStatus::ACCEPTED);
+    CHECK(r7.executed_quantity == 250);
+    CHECK(r7.remaining_quantity == 0);
+    CHECK(!harness.engine().order_book().contains(4));
+    CHECK(harness.engine().order_book().contains(5));
+    CHECK(harness.engine().order_book().find_order(5)->remaining_quantity() == 150);
+
+    // Join level 9900 behind #5
+    harness.submit_limit_order(Order(8, Side::BUY, 9900, 100));
+
+    // Fill remaining 150 of #5 and partially fill #8 (50 units)
+    const auto r9 = harness.submit_limit_order(Order(9, Side::SELL, 9900, 200));
+    CHECK(r9.status == SubmissionStatus::ACCEPTED);
+    CHECK(r9.executed_quantity == 200);
+    CHECK(r9.remaining_quantity == 0);
+    CHECK(!harness.engine().order_book().contains(5));
+    CHECK(harness.engine().order_book().contains(8));
+    CHECK(harness.engine().order_book().find_order(8)->remaining_quantity() == 50);
+}
+
+void test_differential_buy_and_sell_order_flows() {
+    DifferentialHarness harness;
+
+    // Interleaved market-making flow
+    harness.submit_limit_order(Order(1, Side::BUY, 10000, 100));
+    harness.submit_limit_order(Order(2, Side::SELL, 10200, 100));
+    harness.submit_limit_order(Order(3, Side::BUY, 10050, 50));
+    harness.submit_limit_order(Order(4, Side::SELL, 10150, 75));
+    harness.submit_limit_order(Order(5, Side::BUY, 10100, 60));
+    harness.submit_limit_order(Order(6, Side::SELL, 10120, 80));
+
+    // Order inside the spread
+    harness.submit_limit_order(Order(7, Side::BUY, 10110, 40));
+
+    // Crossing BUY: takes 80 at 10120 (#6) and 30 at 10150 (#4)
+    const auto r8 = harness.submit_limit_order(Order(8, Side::BUY, 10150, 110));
+    CHECK(r8.status == SubmissionStatus::ACCEPTED);
+    CHECK(r8.executed_quantity == 110);
+    CHECK(r8.remaining_quantity == 0);
+    CHECK(!harness.engine().order_book().contains(6));
+    CHECK(harness.engine().order_book().find_order(4)->remaining_quantity() == 45);
+
+    // Crossing SELL: takes 40 at 10110 (#7), 60 at 10100 (#5), 50 at 10050 (#3)
+    const auto r9 = harness.submit_limit_order(Order(9, Side::SELL, 10020, 150));
+    CHECK(r9.status == SubmissionStatus::ACCEPTED);
+    CHECK(r9.executed_quantity == 150);
+    CHECK(r9.remaining_quantity == 0);
+    CHECK(!harness.engine().order_book().contains(7));
+    CHECK(!harness.engine().order_book().contains(5));
+    CHECK(!harness.engine().order_book().contains(3));
+
+    // Additional crossing orders establishing new levels
+    harness.submit_limit_order(Order(10, Side::BUY, 10080, 90));
+    const auto r11 = harness.submit_limit_order(Order(11, Side::SELL, 10070, 120));
+    CHECK(r11.status == SubmissionStatus::ACCEPTED);
+    CHECK(r11.executed_quantity == 90);
+    CHECK(r11.remaining_quantity == 30);
+    CHECK(*harness.engine().order_book().best_bid() == 10000);
+    CHECK(*harness.engine().order_book().best_ask() == 10070);
+}
+
+void test_differential_market_insufficient_liquidity() {
+    DifferentialHarness harness;
+
+    // Market orders against empty book: 0 executed, remainder cancelled
+    const auto r1 = harness.submit_market_order(Order(1, Side::BUY, OrderType::MARKET, 0, 100));
+    CHECK(r1.status == SubmissionStatus::ACCEPTED);
+    CHECK(r1.executed_quantity == 0);
+    CHECK(r1.remaining_quantity == 100);
+    const auto acc1 = harness.engine().market_order_accounting(r1);
+    CHECK(acc1.executed_quantity == 0);
+    CHECK(acc1.cancelled_quantity == 100);
+
+    const auto r2 = harness.submit_market_order(Order(2, Side::SELL, OrderType::MARKET, 0, 50));
+    CHECK(r2.status == SubmissionStatus::ACCEPTED);
+    CHECK(r2.executed_quantity == 0);
+    CHECK(r2.remaining_quantity == 50);
+    const auto acc2 = harness.engine().market_order_accounting(r2);
+    CHECK(acc2.executed_quantity == 0);
+    CHECK(acc2.cancelled_quantity == 50);
+
+    // Provide partial ask liquidity: 40 + 60 = 100 units
+    harness.submit_limit_order(Order(3, Side::SELL, 10500, 40));
+    harness.submit_limit_order(Order(4, Side::SELL, 10600, 60));
+
+    // Market BUY for 250: consumes all 100 available asks, cancels remaining 150
+    const auto r5 = harness.submit_market_order(Order(5, Side::BUY, OrderType::MARKET, 0, 250));
+    CHECK(r5.status == SubmissionStatus::ACCEPTED);
+    CHECK(r5.executed_quantity == 100);
+    CHECK(r5.remaining_quantity == 150);
+    const auto acc5 = harness.engine().market_order_accounting(r5);
+    CHECK(acc5.executed_quantity == 100);
+    CHECK(acc5.cancelled_quantity == 150);
+    CHECK(!harness.engine().order_book().best_ask().has_value());
+    CHECK(!harness.engine().order_book().contains(3));
+    CHECK(!harness.engine().order_book().contains(4));
+    CHECK(!harness.engine().order_book().contains(5));
+
+    // Provide partial bid liquidity: 30 + 70 = 100 units
+    harness.submit_limit_order(Order(6, Side::BUY, 10000, 30));
+    harness.submit_limit_order(Order(7, Side::BUY, 9900, 70));
+
+    // Market SELL for 160: consumes all 100 available bids, cancels remaining 60
+    const auto r8 = harness.submit_market_order(Order(8, Side::SELL, OrderType::MARKET, 0, 160));
+    CHECK(r8.status == SubmissionStatus::ACCEPTED);
+    CHECK(r8.executed_quantity == 100);
+    CHECK(r8.remaining_quantity == 60);
+    const auto acc8 = harness.engine().market_order_accounting(r8);
+    CHECK(acc8.executed_quantity == 100);
+    CHECK(acc8.cancelled_quantity == 60);
+    CHECK(!harness.engine().order_book().best_bid().has_value());
+    CHECK(!harness.engine().order_book().contains(6));
+    CHECK(!harness.engine().order_book().contains(7));
+    CHECK(!harness.engine().order_book().contains(8));
+    CHECK(harness.engine().order_book().order_count() == 0);
+}
+
+void test_differential_duplicate_ids_after_execution() {
+    DifferentialHarness harness;
+
+    // Active resting limit order: duplicate submissions rejected
+    const auto r1 = harness.submit_limit_order(Order(1, Side::BUY, 10000, 100));
+    CHECK(r1.status == SubmissionStatus::ACCEPTED);
+
+    const auto dup1_a = harness.submit_limit_order(Order(1, Side::BUY, 10000, 100));
+    CHECK(dup1_a.status == SubmissionStatus::DUPLICATE_ID);
+    CHECK(dup1_a.executed_quantity == 0);
+    CHECK(dup1_a.remaining_quantity == 100);
+
+    const auto dup1_b = harness.submit_limit_order(Order(1, Side::SELL, 11000, 50));
+    CHECK(dup1_b.status == SubmissionStatus::DUPLICATE_ID);
+    CHECK(dup1_b.executed_quantity == 0);
+    CHECK(dup1_b.remaining_quantity == 50);
+
+    const auto dup1_c = harness.submit_market_order(Order(1, Side::BUY, OrderType::MARKET, 0, 50));
+    CHECK(dup1_c.status == SubmissionStatus::DUPLICATE_ID);
+    CHECK(dup1_c.executed_quantity == 0);
+    CHECK(dup1_c.remaining_quantity == 50);
+
+    // Fully fill order 1 with order 2
+    const auto r2 = harness.submit_limit_order(Order(2, Side::SELL, 10000, 100));
+    CHECK(r2.status == SubmissionStatus::ACCEPTED);
+    CHECK(r2.executed_quantity == 100);
+    CHECK(!harness.engine().order_book().contains(1));
+    CHECK(!harness.engine().order_book().contains(2));
+
+    // After full fill and removal from book: duplicate submissions must still be rejected
+    const auto dup1_d = harness.submit_limit_order(Order(1, Side::BUY, 10000, 100));
+    CHECK(dup1_d.status == SubmissionStatus::DUPLICATE_ID);
+
+    const auto dup1_e = harness.submit_market_order(Order(1, Side::BUY, OrderType::MARKET, 0, 50));
+    CHECK(dup1_e.status == SubmissionStatus::DUPLICATE_ID);
+
+    const auto dup2_a = harness.submit_limit_order(Order(2, Side::SELL, 10000, 100));
+    CHECK(dup2_a.status == SubmissionStatus::DUPLICATE_ID);
+
+    const auto dup2_b = harness.submit_market_order(Order(2, Side::SELL, OrderType::MARKET, 0, 50));
+    CHECK(dup2_b.status == SubmissionStatus::DUPLICATE_ID);
+
+    // Unfilled market order: duplicate rejected
+    const auto r3 = harness.submit_market_order(Order(3, Side::BUY, OrderType::MARKET, 0, 50));
+    CHECK(r3.status == SubmissionStatus::ACCEPTED);
+    CHECK(r3.executed_quantity == 0);
+    CHECK(r3.remaining_quantity == 50);
+
+    const auto dup3_a = harness.submit_limit_order(Order(3, Side::BUY, 10000, 50));
+    CHECK(dup3_a.status == SubmissionStatus::DUPLICATE_ID);
+
+    const auto dup3_b = harness.submit_market_order(Order(3, Side::BUY, OrderType::MARKET, 0, 50));
+    CHECK(dup3_b.status == SubmissionStatus::DUPLICATE_ID);
+
+    // Partially filled market order: duplicate rejected
+    const auto r4 = harness.submit_limit_order(Order(4, Side::SELL, 10500, 40));
+    CHECK(r4.status == SubmissionStatus::ACCEPTED);
+
+    const auto r5 = harness.submit_market_order(Order(5, Side::BUY, OrderType::MARKET, 0, 100));
+    CHECK(r5.status == SubmissionStatus::ACCEPTED);
+    CHECK(r5.executed_quantity == 40);
+    CHECK(r5.remaining_quantity == 60);
+
+    const auto dup4 = harness.submit_limit_order(Order(4, Side::SELL, 10500, 40));
+    CHECK(dup4.status == SubmissionStatus::DUPLICATE_ID);
+
+    const auto dup5_a = harness.submit_limit_order(Order(5, Side::BUY, 10000, 100));
+    CHECK(dup5_a.status == SubmissionStatus::DUPLICATE_ID);
+
+    const auto dup5_b = harness.submit_market_order(Order(5, Side::BUY, OrderType::MARKET, 0, 100));
+    CHECK(dup5_b.status == SubmissionStatus::DUPLICATE_ID);
+}
+
+void test_differential_mixed_limit_and_market_sequence() {
+    DifferentialHarness harness;
+
+    // Initial limit orders on both sides
+    harness.submit_limit_order(Order(1, Side::BUY, 10000, 100));
+    harness.submit_limit_order(Order(2, Side::BUY, 9900, 150));
+    harness.submit_limit_order(Order(3, Side::BUY, 9800, 200));
+
+    harness.submit_limit_order(Order(4, Side::SELL, 10200, 80));
+    harness.submit_limit_order(Order(5, Side::SELL, 10300, 120));
+    harness.submit_limit_order(Order(6, Side::SELL, 10400, 160));
+
+    // Market BUY sweeps all 80 of #4 and 70 of #5
+    const auto r7 = harness.submit_market_order(Order(7, Side::BUY, OrderType::MARKET, 0, 150));
+    CHECK(r7.status == SubmissionStatus::ACCEPTED);
+    CHECK(r7.executed_quantity == 150);
+    CHECK(r7.remaining_quantity == 0);
+    CHECK(!harness.engine().order_book().contains(4));
+    CHECK(harness.engine().order_book().find_order(5)->remaining_quantity() == 50);
+
+    // Limit order establishing a tighter ask
+    harness.submit_limit_order(Order(8, Side::SELL, 10250, 90));
+    CHECK(*harness.engine().order_book().best_ask() == 10250);
+
+    // Market SELL sweeps all 100 of #1 and 80 of #2
+    const auto r9 = harness.submit_market_order(Order(9, Side::SELL, OrderType::MARKET, 0, 180));
+    CHECK(r9.status == SubmissionStatus::ACCEPTED);
+    CHECK(r9.executed_quantity == 180);
+    CHECK(r9.remaining_quantity == 0);
+    CHECK(!harness.engine().order_book().contains(1));
+    CHECK(harness.engine().order_book().find_order(2)->remaining_quantity() == 70);
+
+    // Aggressive limit BUY crossing at 10300: takes 90 of #8 and 30 of #5
+    const auto r10 = harness.submit_limit_order(Order(10, Side::BUY, 10300, 120));
+    CHECK(r10.status == SubmissionStatus::ACCEPTED);
+    CHECK(r10.executed_quantity == 120);
+    CHECK(r10.remaining_quantity == 0);
+    CHECK(!harness.engine().order_book().contains(8));
+    CHECK(harness.engine().order_book().find_order(5)->remaining_quantity() == 20);
+
+    // Market BUY takes remaining 20 of #5 and 80 of #6
+    const auto r11 = harness.submit_market_order(Order(11, Side::BUY, OrderType::MARKET, 0, 100));
+    CHECK(r11.status == SubmissionStatus::ACCEPTED);
+    CHECK(r11.executed_quantity == 100);
+    CHECK(r11.remaining_quantity == 0);
+    CHECK(!harness.engine().order_book().contains(5));
+    CHECK(harness.engine().order_book().find_order(6)->remaining_quantity() == 80);
+    CHECK(*harness.engine().order_book().best_bid() == 9900);
+    CHECK(*harness.engine().order_book().best_ask() == 10400);
+}
+
 int main() {
     test_engine_starts_with_empty_book();
     test_engine_is_not_copyable_or_movable();
@@ -1689,6 +2547,13 @@ int main() {
     test_limit_match_only_resting_fully_filled();
     test_limit_match_both_orders_partially_filled();
     test_limit_order_id_reservation_hardening();
+    test_differential_fifo_at_same_price();
+    test_differential_multiple_price_levels();
+    test_differential_partial_fills_and_continuation();
+    test_differential_buy_and_sell_order_flows();
+    test_differential_market_insufficient_liquidity();
+    test_differential_duplicate_ids_after_execution();
+    test_differential_mixed_limit_and_market_sequence();
 
     std::cout << "MatchingEngine tests passed\n";
     return 0;
