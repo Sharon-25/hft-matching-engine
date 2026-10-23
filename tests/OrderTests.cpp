@@ -251,6 +251,105 @@ void test_order_quantity_boundaries() {
     CHECK(order.remaining_quantity() == 0);
 }
 
+void test_order_id_numeric_boundaries() {
+    const OrderId MAX_ID =
+        std::numeric_limits<OrderId>::max();
+
+    Order order(MAX_ID, Side::BUY, 10000, 1);
+
+    CHECK(order.id() == MAX_ID);
+    CHECK(order.status() == OrderStatus::NEW);
+    CHECK(order.remaining_quantity() == 1);
+
+    CHECK(order.execute(1));
+    CHECK(order.status() == OrderStatus::FILLED);
+    CHECK(order.executed_quantity() == 1);
+}
+
+void test_price_numeric_boundaries() {
+    const Price MAX_PRICE =
+        std::numeric_limits<Price>::max();
+
+    Order minimum_price(9101, Side::BUY, 1, 10);
+    Order maximum_price(9102, Side::SELL, MAX_PRICE, 10);
+
+    CHECK(minimum_price.price_ticks() == 1);
+    CHECK(maximum_price.price_ticks() == MAX_PRICE);
+
+    for (Price invalid_price : {Price{0}, Price{-1}}) {
+        bool threw = false;
+
+        try {
+            Order invalid(9103, Side::BUY, invalid_price, 10);
+        }
+        catch (const std::invalid_argument&) {
+            threw = true;
+        }
+
+        CHECK(threw);
+    }
+}
+
+void test_execution_quantity_conservation() {
+    const Quantity MAX_QTY =
+        std::numeric_limits<Quantity>::max();
+
+    Order order(9201, Side::BUY, 10000, MAX_QTY);
+
+    auto check_conservation = [&order]() {
+        CHECK(order.executed_quantity() <=
+              order.original_quantity());
+
+        CHECK(order.remaining_quantity() ==
+              order.original_quantity() -
+              order.executed_quantity());
+    };
+
+    check_conservation();
+
+    CHECK(order.execute(1));
+    check_conservation();
+
+    CHECK(order.execute(MAX_QTY - 2));
+    CHECK(order.remaining_quantity() == 1);
+    check_conservation();
+
+    CHECK(order.execute(1));
+    CHECK(order.status() == OrderStatus::FILLED);
+    check_conservation();
+
+    CHECK(order.executed_quantity() == MAX_QTY);
+    CHECK(order.remaining_quantity() == 0);
+}
+
+void test_rejected_execution_preserves_order() {
+    Order order(9301, Side::SELL, 10000, 100);
+
+    CHECK(!order.execute(0));
+    CHECK(!order.execute(101));
+
+    CHECK(order.status() == OrderStatus::NEW);
+    CHECK(order.remaining_quantity() == 100);
+    CHECK(order.executed_quantity() == 0);
+
+    CHECK(order.execute(40));
+
+    CHECK(!order.execute(61));
+    CHECK(!order.execute(0));
+
+    CHECK(order.status() == OrderStatus::PARTIALLY_FILLED);
+    CHECK(order.remaining_quantity() == 60);
+    CHECK(order.executed_quantity() == 40);
+
+    CHECK(order.cancel());
+
+    CHECK(!order.execute(60));
+
+    CHECK(order.status() == OrderStatus::CANCELLED);
+    CHECK(order.remaining_quantity() == 60);
+    CHECK(order.executed_quantity() == 40);
+}
+
 int main() {
     test_order_creation();
     test_partial_execution();
@@ -268,6 +367,10 @@ int main() {
     test_market_order_rejects_nonzero_price();
     test_invalid_order_type();
     test_order_quantity_boundaries();
+    test_order_id_numeric_boundaries();
+    test_price_numeric_boundaries();
+    test_execution_quantity_conservation();
+    test_rejected_execution_preserves_order();
 
     std::cout << "All Order tests passed.\n";
     return 0;

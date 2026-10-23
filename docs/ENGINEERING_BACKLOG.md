@@ -99,7 +99,12 @@
 
 ### Phase 6 remaining verification
 
-- [ ] P6-11: Add deterministic quantity-boundary and integer-overflow cases, including extreme IDs, quantities and prices.
+- [ ] P6-11: Complete deterministic quantity-boundary and integer-overflow verification.
+      Phase 6.2B added order-level and engine-level tests for maximum
+      IDs, quantities and prices, quantity conservation, rejected
+      executions and MARKET remainder accounting.
+      Remaining: explicit arithmetic-overflow paths and additional
+      multi-trade boundary scenarios.
 - [ ] P6-12: Add deterministic fault injection at actual allocation operations; verify exception and state guarantees beyond manual insertion checkpoints.
 - [ ] P6-13: Audit all operations after the first irreversible trade for exceptions, including finalization. Do not claim a global strong exception guarantee until established.
 - [ ] P6-14: Extend differential verification to seeded randomized operation sequences and cancellation operations once the appropriate engine API is designed.

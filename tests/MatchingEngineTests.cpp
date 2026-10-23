@@ -2505,6 +2505,106 @@ void test_differential_mixed_limit_and_market_sequence() {
     CHECK(*harness.engine().order_book().best_ask() == 10400);
 }
 
+void test_engine_maximum_quantity_partial_fill() {
+    MatchingEngine engine;
+
+    const Quantity MAX_QTY =
+        std::numeric_limits<Quantity>::max();
+
+    const OrderId MAX_ID =
+        std::numeric_limits<OrderId>::max();
+
+    Order resting(MAX_ID, Side::SELL, 10000, MAX_QTY);
+    Order incoming(8101, Side::BUY, 10000, 1);
+
+    CHECK(engine.submit_limit_order(resting).status ==
+          SubmissionStatus::ACCEPTED);
+
+    const SubmissionResult result =
+        engine.submit_limit_order(incoming);
+
+    CHECK(result.status == SubmissionStatus::ACCEPTED);
+    CHECK(result.executed_quantity == 1);
+    CHECK(result.remaining_quantity == 0);
+
+    const Order* remaining =
+        engine.order_book().find_order(MAX_ID);
+
+    CHECK(remaining != nullptr);
+    CHECK(remaining->remaining_quantity() == MAX_QTY - 1);
+    CHECK(remaining->executed_quantity() == 1);
+    CHECK(remaining->status() == OrderStatus::PARTIALLY_FILLED);
+
+    CHECK(engine.trades().size() == 1);
+    CHECK(engine.trades()[0].executed_quantity == 1);
+    CHECK(engine.was_order_id_accepted(MAX_ID));
+}
+
+void test_engine_maximum_price_execution() {
+    MatchingEngine engine;
+
+    const Price MAX_PRICE =
+        std::numeric_limits<Price>::max();
+
+    Order resting(8201, Side::SELL, MAX_PRICE, 10);
+    Order incoming(8202, Side::BUY, MAX_PRICE, 10);
+
+    CHECK(engine.submit_limit_order(resting).status ==
+          SubmissionStatus::ACCEPTED);
+
+    const SubmissionResult result =
+        engine.submit_limit_order(incoming);
+
+    CHECK(result.status == SubmissionStatus::ACCEPTED);
+    CHECK(result.executed_quantity == 10);
+    CHECK(result.remaining_quantity == 0);
+
+    CHECK(engine.trades().size() == 1);
+    CHECK(engine.trades()[0].execution_price_ticks == MAX_PRICE);
+    CHECK(engine.trades()[0].executed_quantity == 10);
+
+    CHECK(engine.order_book().order_count() == 0);
+    CHECK(engine.was_order_id_accepted(8201));
+    CHECK(engine.was_order_id_accepted(8202));
+}
+
+void test_engine_market_maximum_quantity_accounting() {
+    MatchingEngine engine;
+
+    const Quantity MAX_QTY =
+        std::numeric_limits<Quantity>::max();
+
+    Order resting(8301, Side::SELL, 10000, 10);
+    Order incoming(
+        8302, Side::BUY, OrderType::MARKET, 0, MAX_QTY
+    );
+
+    CHECK(engine.submit_limit_order(resting).status ==
+          SubmissionStatus::ACCEPTED);
+
+    const SubmissionResult result =
+        engine.submit_market_order(incoming);
+
+    CHECK(result.status == SubmissionStatus::ACCEPTED);
+    CHECK(result.executed_quantity == 10);
+    CHECK(result.remaining_quantity == MAX_QTY - 10);
+
+    const auto accounting =
+        engine.market_order_accounting(result);
+
+    CHECK(accounting.executed_quantity == 10);
+    CHECK(accounting.cancelled_quantity == MAX_QTY - 10);
+
+    CHECK(accounting.executed_quantity <= MAX_QTY);
+    CHECK(accounting.cancelled_quantity ==
+          MAX_QTY - accounting.executed_quantity);
+
+    CHECK(engine.trades().size() == 1);
+    CHECK(engine.trades()[0].executed_quantity == 10);
+    CHECK(engine.order_book().order_count() == 0);
+    CHECK(engine.was_order_id_accepted(8302));
+}
+
 int main() {
     test_engine_starts_with_empty_book();
     test_engine_is_not_copyable_or_movable();
@@ -2554,6 +2654,9 @@ int main() {
     test_differential_market_insufficient_liquidity();
     test_differential_duplicate_ids_after_execution();
     test_differential_mixed_limit_and_market_sequence();
+	test_engine_maximum_quantity_partial_fill();
+    test_engine_maximum_price_execution();
+    test_engine_market_maximum_quantity_accounting();
 
     std::cout << "MatchingEngine tests passed\n";
     return 0;
