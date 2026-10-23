@@ -95,7 +95,12 @@
 - [x] P6-07: Compare production and reference results after each submission: acceptance status, executed and remaining quantities, active orders and states, best bid/ask, trade history, historical IDs, invariant checks and FIFO order at price levels.
 - [x] P6-08: Add seven fixed scenarios: FIFO at equal prices; multiple price levels; partial fills and continuation; BUY/SELL flows; MARKET orders with insufficient liquidity; duplicate IDs after execution; mixed LIMIT/MARKET sequence.
 - [x] P6-09: Register all seven differential scenarios in MatchingEngineTests.cpp; commit the test-only change as df85fa5.
-- [ ] P6-10: Archive reproducible Debug and Release CTest results for commit df85fa5 in the project verification log. Both configurations were previously reported passing, but the audit package does not contain independently archived test logs.
+- [x] P6-10: Archive reproducible Debug and Release CTest
+      verification for the Phase 6 implementation.
+      Build and CTest logs recorded on a descendant of df85fa5.
+      Both configurations passed all three CTest executables.
+      Historical df85fa5 was not independently re-executed.
+      Evidence: docs/VERIFICATION_LOG.md and archived logs.
 
 ### Phase 6 remaining verification
 
@@ -155,7 +160,11 @@
 - Trade history has no enforced memory bound.
 - Seven deterministic differential scenarios are implemented; seeded randomized book-invariant and differential testing remains incomplete.
 - BUY and SELL price-time priority is covered by deterministic tests; broader randomized sequences remain pending.
-- Debug and Release CTest runs for commit df85fa5 were previously reported passing, but the audit package does not contain independently archived test logs. Reproducible verification logs remain pending under P6-10.
+- Debug and Release builds and CTest suites passed on a descendant
+  of df85fa5, with all three test executables passing in both
+  configurations. Raw execution logs are archived under docs/
+  and summarized in docs/VERIFICATION_LOG.md.
+  Historical commit df85fa5 was not independently re-executed.
 - No comprehensive strong exception guarantee is claimed for operations after irreversible trade execution.
 - ID uniqueness currently has both book-level and engine-level state.
 - Concurrency and benchmarking are not implemented.

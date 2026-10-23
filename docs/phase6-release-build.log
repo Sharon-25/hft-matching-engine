@@ -1,0 +1,5 @@
+[ 33%] Built target matching_core
+[ 50%] Built target matching_engine
+[ 66%] Built target order_tests
+[ 83%] Built target order_book_tests
+[100%] Built target matching_engine_tests
