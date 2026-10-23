@@ -105,6 +105,10 @@
       executions and MARKET remainder accounting.
       Remaining: explicit arithmetic-overflow paths and additional
       multi-trade boundary scenarios.
+      Additional multi-trade tests cover UINT64_MAX full fills,
+      partial fills, FIFO execution and MARKET cancellation
+      accounting. Debug and Release regression suites passed.
+      Remaining: source-level audit of arithmetic overflow paths.
 - [ ] P6-12: Add deterministic fault injection at actual allocation operations; verify exception and state guarantees beyond manual insertion checkpoints.
 - [ ] P6-13: Audit all operations after the first irreversible trade for exceptions, including finalization. Do not claim a global strong exception guarantee until established.
 - [ ] P6-14: Extend differential verification to seeded randomized operation sequences and cancellation operations once the appropriate engine API is designed.

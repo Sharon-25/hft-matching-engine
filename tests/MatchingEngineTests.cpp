@@ -2605,6 +2605,119 @@ void test_engine_market_maximum_quantity_accounting() {
     CHECK(engine.was_order_id_accepted(8302));
 }
 
+void test_engine_maximum_quantity_multiple_trades() {
+    MatchingEngine engine;
+
+    const Quantity MAX_QTY =
+        std::numeric_limits<Quantity>::max();
+
+    Order resting1(8401, Side::SELL, 10000, MAX_QTY - 10);
+    Order resting2(8402, Side::SELL, 10000, 10);
+    Order incoming(8403, Side::BUY, 10000, MAX_QTY);
+
+    CHECK(engine.submit_limit_order(resting1).status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(engine.submit_limit_order(resting2).status ==
+          SubmissionStatus::ACCEPTED);
+
+    const SubmissionResult result =
+        engine.submit_limit_order(incoming);
+
+    CHECK(result.status == SubmissionStatus::ACCEPTED);
+    CHECK(result.executed_quantity == MAX_QTY);
+    CHECK(result.remaining_quantity == 0);
+
+    CHECK(engine.trades().size() == 2);
+
+    CHECK(engine.trades()[0].executed_quantity == MAX_QTY - 10);
+    CHECK(engine.trades()[1].executed_quantity == 10);
+
+    CHECK(engine.trades()[0].resting_order_id == 8401);
+    CHECK(engine.trades()[1].resting_order_id == 8402);
+
+    CHECK(engine.order_book().order_count() == 0);
+
+    CHECK(engine.was_order_id_accepted(8401));
+    CHECK(engine.was_order_id_accepted(8402));
+    CHECK(engine.was_order_id_accepted(8403));
+}
+
+void test_engine_maximum_quantity_partial_multi_trade() {
+    MatchingEngine engine;
+
+    const Quantity MAX_QTY =
+        std::numeric_limits<Quantity>::max();
+
+    Order resting1(8501, Side::SELL, 10000, MAX_QTY - 20);
+    Order resting2(8502, Side::SELL, 10000, 10);
+    Order incoming(8503, Side::BUY, 10000, MAX_QTY);
+
+    CHECK(engine.submit_limit_order(resting1).status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(engine.submit_limit_order(resting2).status ==
+          SubmissionStatus::ACCEPTED);
+
+    const SubmissionResult result =
+        engine.submit_limit_order(incoming);
+
+    CHECK(result.status == SubmissionStatus::ACCEPTED);
+    CHECK(result.executed_quantity == MAX_QTY - 10);
+    CHECK(result.remaining_quantity == 10);
+
+    CHECK(engine.trades().size() == 2);
+    CHECK(engine.trades()[0].executed_quantity == MAX_QTY - 20);
+    CHECK(engine.trades()[1].executed_quantity == 10);
+
+    const Order* remaining =
+        engine.order_book().find_order(8503);
+
+    CHECK(remaining != nullptr);
+    CHECK(remaining->remaining_quantity() == 10);
+    CHECK(remaining->executed_quantity() == MAX_QTY - 10);
+    CHECK(remaining->status() == OrderStatus::PARTIALLY_FILLED);
+
+    CHECK(engine.order_book().order_count() == 1);
+}
+
+void test_engine_market_maximum_quantity_multiple_trades() {
+    MatchingEngine engine;
+
+    const Quantity MAX_QTY =
+        std::numeric_limits<Quantity>::max();
+
+    Order resting1(8601, Side::SELL, 10000, MAX_QTY - 20);
+    Order resting2(8602, Side::SELL, 10000, 10);
+
+    Order incoming(
+        8603, Side::BUY, OrderType::MARKET, 0, MAX_QTY
+    );
+
+    CHECK(engine.submit_limit_order(resting1).status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(engine.submit_limit_order(resting2).status ==
+          SubmissionStatus::ACCEPTED);
+
+    const SubmissionResult result =
+        engine.submit_market_order(incoming);
+
+    CHECK(result.status == SubmissionStatus::ACCEPTED);
+    CHECK(result.executed_quantity == MAX_QTY - 10);
+    CHECK(result.remaining_quantity == 10);
+
+    const auto accounting =
+        engine.market_order_accounting(result);
+
+    CHECK(accounting.executed_quantity == MAX_QTY - 10);
+    CHECK(accounting.cancelled_quantity == 10);
+
+    CHECK(engine.trades().size() == 2);
+    CHECK(engine.trades()[0].executed_quantity == MAX_QTY - 20);
+    CHECK(engine.trades()[1].executed_quantity == 10);
+
+    CHECK(engine.order_book().order_count() == 0);
+    CHECK(engine.was_order_id_accepted(8603));
+}
+
 int main() {
     test_engine_starts_with_empty_book();
     test_engine_is_not_copyable_or_movable();
@@ -2657,6 +2770,9 @@ int main() {
 	test_engine_maximum_quantity_partial_fill();
     test_engine_maximum_price_execution();
     test_engine_market_maximum_quantity_accounting();
+    test_engine_maximum_quantity_multiple_trades();
+    test_engine_maximum_quantity_partial_multi_trade();
+    test_engine_market_maximum_quantity_multiple_trades();
 
     std::cout << "MatchingEngine tests passed\n";
     return 0;
