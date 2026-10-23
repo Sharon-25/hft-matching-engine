@@ -99,16 +99,15 @@
 
 ### Phase 6 remaining verification
 
-- [ ] P6-11: Complete deterministic quantity-boundary and integer-overflow verification.
-      Phase 6.2B added order-level and engine-level tests for maximum
-      IDs, quantities and prices, quantity conservation, rejected
-      executions and MARKET remainder accounting.
-      Remaining: explicit arithmetic-overflow paths and additional
-      multi-trade boundary scenarios.
-      Additional multi-trade tests cover UINT64_MAX full fills,
-      partial fills, FIFO execution and MARKET cancellation
+- [x] P6-11: Complete deterministic quantity-boundary and arithmetic-overflow verification.
+      Tests cover maximum OrderId, Quantity and Price values,
+      rejected executions, full and partial fills, multi-trade
+      quantity conservation, FIFO execution and MARKET remainder
       accounting. Debug and Release regression suites passed.
-      Remaining: source-level audit of arithmetic overflow paths.
+      Source audit confirmed bounded quantity subtraction and
+      accumulation, guarded trade-vector capacity arithmetic,
+      direct price comparisons and container-derived order counts.
+      No arithmetic-overflow defect identified in audited paths.
 - [ ] P6-12: Add deterministic fault injection at actual allocation operations; verify exception and state guarantees beyond manual insertion checkpoints.
 - [ ] P6-13: Audit all operations after the first irreversible trade for exceptions, including finalization. Do not claim a global strong exception guarantee until established.
 - [ ] P6-14: Extend differential verification to seeded randomized operation sequences and cancellation operations once the appropriate engine API is designed.
@@ -116,7 +115,6 @@
 
 ## Later phases
 
-- [ ] Invalid input, overflow and quantity-boundary tests (see P6-11).
 - [ ] Add seeded randomized operation-sequence tests and reproduce failures from recorded seeds (see P6-14).
 - [ ] Verify exception behavior of every operation performed after the first trade, including finalization (see P6-13).
 - [ ] Inject failures at actual allocator operations and verify recovery, beyond manually inserted failure checkpoints.
