@@ -1,14 +1,26 @@
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 
-#define CHECK(condition)                                             \
-    do {                                                             \
-        if (!(condition)) {                                          \
-            std::fprintf(stderr,                                    \
-                         "CHECK failed: %s (%s:%d)\n",               \
-                         #condition, __FILE__, __LINE__);           \
-            std::abort();                                            \
-        }                                                            \
+static bool g_randomized_test_active = false;
+static unsigned long long g_randomized_seed = 0;
+static std::size_t g_randomized_operation = 0;
+
+#define CHECK(condition)                                                   \
+    do {                                                                   \
+        if (!(condition)) {                                                \
+            std::fprintf(stderr,                                          \
+                         "CHECK failed: %s (%s:%d)\n",                     \
+                         #condition, __FILE__, __LINE__);                 \
+            if (g_randomized_test_active) {                                \
+                std::fprintf(stderr,                                      \
+                             "Randomized test seed: %llu, operation: %zu\n",\
+                             g_randomized_seed,                            \
+                             g_randomized_operation);                      \
+            }                                                              \
+            std::abort();                                                  \
+        }                                                                  \
     } while (false)
 #include <algorithm>
 #include <iostream>
@@ -2958,6 +2970,112 @@ void test_engine_trade_history_allocation_failure() {
 }
 #endif
 
+void test_seeded_randomized_differential_sequences() {
+    constexpr std::uint64_t seeds[] = {
+        0x123456789ABCDEF0ULL,
+        0xDEADBEEF12345678ULL,
+        0xCAFEBABE87654321ULL,
+        0xA5A5A5A55A5A5A5AULL,
+        0x9876543210FEDCBAULL
+    };
+
+    constexpr std::size_t operations_per_seed = 1000;
+
+    for (const std::uint64_t seed : seeds) {
+        g_randomized_test_active = true;
+        g_randomized_seed = static_cast<unsigned long long>(seed);
+
+        DifferentialHarness harness;
+
+        // Fixed-seed SplitMix64 generator.
+        // Its output is independent of standard-library distributions.
+        std::uint64_t state = seed;
+
+        const auto next_random = [&state]() -> std::uint64_t {
+            state += 0x9E3779B97F4A7C15ULL;
+
+            std::uint64_t z = state;
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+
+            return z ^ (z >> 31);
+        };
+
+        const auto bounded_random =
+            [&next_random](std::uint64_t bound) -> std::uint64_t {
+                return next_random() % bound;
+            };
+
+        std::vector<OrderId> submitted_ids;
+        submitted_ids.reserve(operations_per_seed);
+
+        for (std::size_t operation = 0;
+             operation < operations_per_seed;
+             ++operation) {
+
+            g_randomized_operation = operation;
+
+            const std::uint64_t operation_type = bounded_random(100);
+
+            const bool duplicate =
+                operation_type >= 90 && !submitted_ids.empty();
+
+            OrderId id;
+
+            if (duplicate) {
+                id = submitted_ids[
+                    static_cast<std::size_t>(
+                        bounded_random(submitted_ids.size())
+                    )
+                ];
+            } else {
+                id = static_cast<OrderId>(operation + 1);
+                submitted_ids.push_back(id);
+            }
+
+            const Side side =
+                bounded_random(2) == 0 ? Side::BUY : Side::SELL;
+
+            const Quantity quantity =
+                static_cast<Quantity>(1 + bounded_random(250));
+
+            const bool use_limit =
+                operation_type < 65 ||
+                (duplicate && bounded_random(2) == 0);
+
+            if (use_limit) {
+                const Price price =
+                    static_cast<Price>(
+                        9800 + 10 * bounded_random(41)
+                    );
+
+                harness.submit_limit_order(
+                    Order(id, side, price, quantity)
+                );
+            } else {
+                harness.submit_market_order(
+                    Order(
+                        id,
+                        side,
+                        OrderType::MARKET,
+                        0,
+                        quantity
+                    )
+                );
+            }
+        }
+
+        g_randomized_test_active = false;
+
+        std::cout
+            << "Randomized differential seed passed: "
+            << seed
+            << " ("
+            << operations_per_seed
+            << " operations)\n";
+    }
+}
+
 int main() {
     test_engine_starts_with_empty_book();
     test_engine_is_not_copyable_or_movable();
@@ -3007,7 +3125,8 @@ int main() {
     test_differential_market_insufficient_liquidity();
     test_differential_duplicate_ids_after_execution();
     test_differential_mixed_limit_and_market_sequence();
-	test_engine_maximum_quantity_partial_fill();
+    test_seeded_randomized_differential_sequences();
+    test_engine_maximum_quantity_partial_fill();
     test_engine_maximum_price_execution();
     test_engine_market_maximum_quantity_accounting();
     test_engine_maximum_quantity_multiple_trades();
