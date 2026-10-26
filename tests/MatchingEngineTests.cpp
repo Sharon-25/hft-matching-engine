@@ -23,6 +23,15 @@
 #include "matching_engine/MatchingEngine.hpp"
 #include "matching_engine/TestingAllocator.hpp"
 
+static_assert(std::is_nothrow_copy_constructible_v<matching_engine::Trade>);
+static_assert(std::is_nothrow_move_constructible_v<matching_engine::Trade>);
+
+static_assert(std::is_nothrow_copy_constructible_v<matching_engine::SubmissionResult>);
+static_assert(std::is_nothrow_move_constructible_v<matching_engine::SubmissionResult>);
+
+static_assert(std::is_nothrow_destructible_v<matching_engine::Order>);
+static_assert(std::is_nothrow_destructible_v<matching_engine::Trade>);
+
 using namespace matching_engine;
 
 void test_engine_starts_with_empty_book() {
