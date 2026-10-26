@@ -1,6 +1,7 @@
 # CMake build outputs
 build/
 build-release/
+/build-production/
 cmake-build-*/
 
 # Visual Studio

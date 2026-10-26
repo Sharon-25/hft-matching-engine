@@ -33,11 +33,6 @@ set_target_properties(
     CXX_EXTENSIONS OFF
 )
 
-target_compile_definitions(
-    matching_core
-    PUBLIC MATCHING_ENGINE_TESTING
-)
-
 # Compiler warnings
 if(MSVC)
     target_compile_options(
@@ -72,6 +67,58 @@ target_link_libraries(
 include(CTest)
 
 if(BUILD_TESTING)
+    # Separate instrumented library for testing only.
+    # The macro must be consistent between the library
+    # and every test executable using its public headers.
+    add_library(
+        matching_core_testing
+        STATIC
+        src/Order.cpp
+        src/OrderBook.cpp
+        src/MatchingEngine.cpp
+    )
+
+    target_include_directories(
+        matching_core_testing
+        PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_compile_features(
+        matching_core_testing
+        PUBLIC
+        cxx_std_20
+    )
+
+    set_target_properties(
+        matching_core_testing
+        PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+
+    target_compile_definitions(
+        matching_core_testing
+        PUBLIC
+        MATCHING_ENGINE_TESTING
+    )
+
+    if(MSVC)
+        target_compile_options(
+            matching_core_testing
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    else()
+        target_compile_options(
+            matching_core_testing
+            PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
     add_executable(
         order_tests
         tests/OrderTests.cpp
@@ -80,7 +127,7 @@ if(BUILD_TESTING)
     target_link_libraries(
         order_tests
         PRIVATE
-        matching_core
+        matching_core_testing
     )
 
     add_test(
@@ -96,7 +143,7 @@ if(BUILD_TESTING)
     target_link_libraries(
         order_book_tests
         PRIVATE
-        matching_core
+        matching_core_testing
     )
 
     add_test(
@@ -112,7 +159,7 @@ if(BUILD_TESTING)
     target_link_libraries(
         matching_engine_tests
         PRIVATE
-        matching_core
+        matching_core_testing
     )
 
     add_test(
