@@ -9,40 +9,36 @@ namespace matching_engine {
 
 namespace {
 
+template <typename IdSet>
 class OrderIdReservation {
 private:
-    std::unordered_set<OrderId>& ids_;
+    IdSet& ids_;
     OrderId id_;
     bool committed_ = false;
+    bool inserted_ = false;
 
 public:
-    OrderIdReservation(
-        std::unordered_set<OrderId>& ids,
-        OrderId id
-    )
-        : ids_(ids), id_(id)
-    {
-        auto [it, inserted] = ids_.insert(id);
+    OrderIdReservation(IdSet& ids, OrderId id)
+        : ids_(ids), id_(id) {
+        inserted_ = ids_.insert(id_).second;
+    }
 
-        if (!inserted) {
-            throw std::logic_error(
-                "Order ID already reserved"
-            );
+    ~OrderIdReservation() noexcept {
+        if (inserted_ && !committed_) {
+            ids_.erase(id_);
         }
     }
 
-    OrderIdReservation(const OrderIdReservation&) = delete;
-    OrderIdReservation& operator=(const OrderIdReservation&) = delete;
-
-    ~OrderIdReservation() {
-        if (!committed_) {
-            ids_.erase(id_);
-        }
+    bool inserted() const noexcept {
+        return inserted_;
     }
 
     void commit() noexcept {
         committed_ = true;
     }
+
+    OrderIdReservation(const OrderIdReservation&) = delete;
+    OrderIdReservation& operator=(const OrderIdReservation&) = delete;
 };
 
 } // unnamed namespace
@@ -96,9 +92,16 @@ SubmissionResult MatchingEngine::submit_limit_order(
         );
     }
 
-    trades_.reserve(
-        trades_.size() + expected_trades
-    );
+    const std::size_t required_trade_capacity =
+        trades_.size() + expected_trades;
+
+#ifdef MATCHING_ENGINE_TESTING
+    if (required_trade_capacity > trades_.capacity()) {
+        testing::AllocationController::before_trade_history_reserve();
+    }
+#endif
+
+    trades_.reserve(required_trade_capacity);
 
     // Allocate incoming order storage before any execution.
     if (!book_.add_active_order(order)) {
@@ -252,9 +255,16 @@ SubmissionResult MatchingEngine::submit_market_order(
         );
     }
 
-    trades_.reserve(
-        trades_.size() + expected_trades
-    );
+    const std::size_t required_trade_capacity =
+        trades_.size() + expected_trades;
+
+#ifdef MATCHING_ENGINE_TESTING
+    if (required_trade_capacity > trades_.capacity()) {
+        testing::AllocationController::before_trade_history_reserve();
+    }
+#endif
+
+    trades_.reserve(required_trade_capacity);
 
     // 6. Execute directly against the resting book.
     // The incoming market order is never inserted.

@@ -13,6 +13,10 @@
 
 #include "matching_engine/Order.hpp"
 
+#ifdef MATCHING_ENGINE_TESTING
+#include "matching_engine/TestingAllocator.hpp"
+#endif
+
 namespace matching_engine {
 
 #ifdef MATCHING_ENGINE_TESTING
@@ -26,18 +30,33 @@ enum class InsertionFailurePoint {
 
 class OrderBook {
 private:
-    using OrderList = std::list<Order>;
+#ifdef MATCHING_ENGINE_TESTING
+    template <typename T>
+    using BookAllocator = testing::TestingAllocator<T>;
+#else
+    template <typename T>
+    using BookAllocator = std::allocator<T>;
+#endif
+
+    using OrderList = std::list<
+        Order,
+        BookAllocator<Order>
+    >;
+
+    using PriceLevel = std::pair<const Price, OrderList>;
 
     using BidBook = std::map<
         Price,
         OrderList,
-        std::greater<Price>
+        std::greater<Price>,
+        BookAllocator<PriceLevel>
     >;
 
     using AskBook = std::map<
         Price,
         OrderList,
-        std::less<Price>
+        std::less<Price>,
+        BookAllocator<PriceLevel>
     >;
 
     struct OrderLocation {
@@ -46,10 +65,27 @@ private:
         OrderList::iterator iterator;
     };
 
+    using OrderIndex = std::unordered_map<
+        OrderId,
+        OrderLocation,
+        std::hash<OrderId>,
+        std::equal_to<OrderId>,
+        BookAllocator<
+            std::pair<const OrderId, OrderLocation>
+        >
+    >;
+
+    using UsedOrderIds = std::unordered_set<
+        OrderId,
+        std::hash<OrderId>,
+        std::equal_to<OrderId>,
+        BookAllocator<OrderId>
+    >;
+
     BidBook bids_;
     AskBook asks_;
-    std::unordered_map<OrderId, OrderLocation> order_index_;
-    std::unordered_set<OrderId> used_order_ids_;
+    OrderIndex order_index_;
+    UsedOrderIds used_order_ids_;
 
     template <typename BookType>
     void insert_into_side(

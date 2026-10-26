@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <new>
 
 #define CHECK(condition)                                             \
     do {                                                             \
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include "matching_engine/OrderBook.hpp"
+#include "matching_engine/TestingAllocator.hpp"
 #include "matching_engine/Trade.hpp"
 
 using namespace matching_engine;
@@ -808,6 +810,486 @@ void test_execute_best_order_subsequent_matching_after_full_fill() {
     CHECK(book.validate_invariants());
 }
 
+#ifdef MATCHING_ENGINE_TESTING
+void test_new_buy_price_level_allocation_failure() {
+    using matching_engine::testing::AllocationController;
+
+    OrderBook book;
+
+    const Order order(900001, Side::BUY, 15000, 10);
+
+    AllocationController::fail_on(1);
+
+    bool threw = false;
+
+    try {
+        book.add_order(order);
+    } catch (const std::bad_alloc&) {
+        threw = true;
+    }
+
+    AllocationController::reset();
+
+    CHECK(threw);
+    CHECK(book.order_count() == 0);
+    CHECK(!book.contains(order.id()));
+    CHECK(!book.was_order_id_used(order.id()));
+    CHECK(!book.best_bid().has_value());
+    CHECK(book.validate_invariants());
+
+    // A failed admission must not consume the order ID.
+    CHECK(book.add_order(order));
+    CHECK(book.contains(order.id()));
+    CHECK(book.was_order_id_used(order.id()));
+    CHECK(book.validate_invariants());
+}
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+void test_new_buy_list_allocation_failure() {
+    using matching_engine::testing::AllocationController;
+
+    OrderBook book;
+    const Order order(900002, Side::BUY, 15000, 10);
+
+    // Allocation 1: create the map price level.
+    // Allocation 2: create the list node.
+    AllocationController::fail_on(2);
+
+    bool threw = false;
+
+    try {
+        book.add_order(order);
+    } catch (const std::bad_alloc&) {
+        threw = true;
+    }
+
+    AllocationController::reset();
+
+    CHECK(threw);
+    CHECK(book.order_count() == 0);
+    CHECK(!book.contains(order.id()));
+    CHECK(!book.was_order_id_used(order.id()));
+    CHECK(!book.best_bid().has_value());
+    CHECK(book.validate_invariants());
+
+    // The failed order ID must remain available.
+    CHECK(book.add_order(order));
+    CHECK(book.contains(order.id()));
+    CHECK(book.was_order_id_used(order.id()));
+    CHECK(book.validate_invariants());
+}
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+void test_new_buy_index_allocation_failure() {
+    using matching_engine::testing::AllocationController;
+
+    OrderBook book;
+    const Order order(900003, Side::BUY, 15000, 10);
+
+    // Expected allocation sequence:
+    // 1. Price-level map node
+    // 2. Order list node
+    // 3. Active-order index node
+    AllocationController::fail_on(3);
+
+    bool threw = false;
+
+    try {
+        book.add_order(order);
+    } catch (const std::bad_alloc&) {
+        threw = true;
+    }
+
+    const auto attempts = AllocationController::attempts();
+    AllocationController::reset();
+
+    CHECK(threw);
+    CHECK(attempts == 3);
+
+    CHECK(book.order_count() == 0);
+    CHECK(!book.contains(order.id()));
+    CHECK(!book.was_order_id_used(order.id()));
+    CHECK(!book.best_bid().has_value());
+    CHECK(book.validate_invariants());
+
+    // The order must be accepted when retried.
+    CHECK(book.add_order(order));
+    CHECK(book.contains(order.id()));
+    CHECK(book.was_order_id_used(order.id()));
+    CHECK(book.validate_invariants());
+}
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+void test_new_buy_index_bucket_allocation_failure() {
+    using matching_engine::testing::AllocationController;
+
+    OrderBook book;
+    const Order order(900004, Side::BUY, 15000, 10);
+
+    AllocationController::fail_on(4);
+
+    bool threw = false;
+
+    try {
+        book.add_order(order);
+    } catch (const std::bad_alloc&) {
+        threw = true;
+    }
+
+    const auto attempts = AllocationController::attempts();
+    AllocationController::reset();
+
+    CHECK(threw);
+    CHECK(attempts == 4);
+
+    CHECK(book.order_count() == 0);
+    CHECK(!book.contains(order.id()));
+    CHECK(!book.was_order_id_used(order.id()));
+    CHECK(!book.best_bid().has_value());
+    CHECK(book.validate_invariants());
+
+    // Verify that rollback preserved retryability.
+    CHECK(book.add_order(order));
+    CHECK(book.contains(order.id()));
+    CHECK(book.was_order_id_used(order.id()));
+    CHECK(book.validate_invariants());
+}
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+void test_new_buy_historical_id_allocation_failure() {
+    using matching_engine::testing::AllocationController;
+
+    OrderBook book;
+    const Order order(900005, Side::BUY, 15000, 10);
+
+    // Expected MSVC allocation sequence:
+    // 1. Price-level map node
+    // 2. Order list node
+    // 3. Active-order index node
+    // 4. Active-order index bucket array
+    // 5. Historical-ID set node
+    AllocationController::fail_on(5);
+
+    bool threw = false;
+
+    try {
+        book.add_order(order);
+    } catch (const std::bad_alloc&) {
+        threw = true;
+    }
+
+    const auto attempts = AllocationController::attempts();
+    AllocationController::reset();
+
+    CHECK(threw);
+    CHECK(attempts == 5);
+
+    CHECK(book.order_count() == 0);
+    CHECK(!book.contains(order.id()));
+    CHECK(!book.was_order_id_used(order.id()));
+    CHECK(!book.best_bid().has_value());
+    CHECK(book.validate_invariants());
+
+    // Failed admission must not permanently reserve the ID.
+    CHECK(book.add_order(order));
+    CHECK(book.contains(order.id()));
+    CHECK(book.was_order_id_used(order.id()));
+    CHECK(book.validate_invariants());
+}
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+void test_new_buy_historical_id_bucket_allocation_failure() {
+    using matching_engine::testing::AllocationController;
+
+    const Order order(900006, Side::BUY, 15000, 10);
+
+    // Measure only allocations performed by add_order().
+    // Exclude allocations performed by OrderBook construction.
+    std::size_t total_attempts = 0;
+
+    {
+        AllocationController::reset();
+
+        OrderBook probe;
+
+        AllocationController::reset();
+
+        CHECK(probe.add_order(order));
+
+        total_attempts = AllocationController::attempts();
+    }
+
+    AllocationController::reset();
+    CHECK(total_attempts > 0);
+
+    // Exercise every observed allocation failure point.
+    for (std::size_t fail_at = 1;
+         fail_at <= total_attempts;
+         ++fail_at) {
+
+        AllocationController::reset();
+
+        OrderBook book;
+        AllocationController::fail_on(fail_at);
+
+        bool threw = false;
+
+        try {
+            book.add_order(order);
+        } catch (const std::bad_alloc&) {
+            threw = true;
+        }
+
+        const auto attempts = AllocationController::attempts();
+        AllocationController::reset();
+
+        CHECK(threw);
+        CHECK(attempts == fail_at);
+
+        CHECK(book.order_count() == 0);
+        CHECK(!book.contains(order.id()));
+        CHECK(!book.was_order_id_used(order.id()));
+        CHECK(!book.best_bid().has_value());
+        CHECK(book.validate_invariants());
+
+        CHECK(book.add_order(order));
+        CHECK(book.contains(order.id()));
+        CHECK(book.was_order_id_used(order.id()));
+        CHECK(book.validate_invariants());
+    }
+}
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+void test_existing_buy_price_level_allocation_failures() {
+    using matching_engine::testing::AllocationController;
+
+    // Measure allocations for insertion at an existing BUY price level.
+    const Order resting_probe(910001, Side::BUY, 15000, 10);
+    const Order incoming_probe(910002, Side::BUY, 15000, 5);
+
+    std::size_t total_attempts = 0;
+
+    {
+        AllocationController::reset();
+
+        OrderBook probe;
+
+        CHECK(probe.add_order(resting_probe));
+
+        AllocationController::reset();
+
+        CHECK(probe.add_order(incoming_probe));
+
+        total_attempts = AllocationController::attempts();
+    }
+
+    AllocationController::reset();
+
+    CHECK(total_attempts > 0);
+
+    for (std::size_t fail_at = 1;
+         fail_at <= total_attempts;
+         ++fail_at) {
+        AllocationController::reset();
+
+        OrderBook book;
+
+        const Order resting(910001, Side::BUY, 15000, 10);
+        const Order incoming(910002, Side::BUY, 15000, 5);
+
+        CHECK(book.add_order(resting));
+
+        AllocationController::fail_on(fail_at);
+
+        bool threw = false;
+
+        try {
+            book.add_order(incoming);
+        } catch (const std::bad_alloc&) {
+            threw = true;
+        }
+
+        const auto attempts = AllocationController::attempts();
+        AllocationController::reset();
+
+        CHECK(threw);
+        CHECK(attempts == fail_at);
+
+        // Existing order must remain unchanged.
+        CHECK(book.order_count() == 1);
+        CHECK(book.contains(resting.id()));
+        CHECK(book.was_order_id_used(resting.id()));
+
+        CHECK(book.best_bid().has_value());
+        CHECK(book.best_bid().value() == 15000);
+
+        CHECK(!book.contains(incoming.id()));
+        CHECK(!book.was_order_id_used(incoming.id()));
+
+        CHECK(book.validate_invariants());
+
+        CHECK((book.order_ids_at_price(
+            Side::BUY, 15000
+        ) == std::vector<OrderId>{910001}));
+
+        // Failed admission must be retryable.
+        CHECK(book.add_order(incoming));
+
+        CHECK(book.order_count() == 2);
+        CHECK(book.contains(resting.id()));
+        CHECK(book.contains(incoming.id()));
+        CHECK(book.validate_invariants());
+
+        CHECK((book.order_ids_at_price(
+            Side::BUY, 15000
+        ) == std::vector<OrderId>{910001, 910002}));
+    }
+}
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+void test_sell_side_allocation_failures() {
+    using matching_engine::testing::AllocationController;
+
+    // Scenario A: new SELL price level.
+    // Measure allocations for this build configuration.
+    const Order new_sell(920001, Side::SELL, 16000, 10);
+
+    std::size_t new_level_attempts = 0;
+
+    {
+        AllocationController::reset();
+
+        OrderBook probe;
+
+        // Exclude OrderBook construction allocations.
+        AllocationController::reset();
+
+        CHECK(probe.add_order(new_sell));
+
+        new_level_attempts = AllocationController::attempts();
+    }
+
+    AllocationController::reset();
+
+    CHECK(new_level_attempts > 0);
+
+    for (std::size_t fail_at = 1;
+         fail_at <= new_level_attempts;
+         ++fail_at) {
+        AllocationController::reset();
+
+        OrderBook book;
+        const Order incoming(920001, Side::SELL, 16000, 10);
+
+        AllocationController::fail_on(fail_at);
+
+        bool threw = false;
+        try {
+            book.add_order(incoming);
+        } catch (const std::bad_alloc&) {
+            threw = true;
+        }
+
+        const auto attempts = AllocationController::attempts();
+        AllocationController::reset();
+
+        CHECK(threw);
+        CHECK(attempts == fail_at);
+        CHECK(book.order_count() == 0);
+        CHECK(!book.contains(incoming.id()));
+        CHECK(!book.was_order_id_used(incoming.id()));
+        CHECK(!book.best_ask().has_value());
+        CHECK(book.validate_invariants());
+
+        CHECK(book.add_order(incoming));
+        CHECK(book.contains(incoming.id()));
+        CHECK(book.validate_invariants());
+    }
+
+    // Scenario B: existing SELL price level.
+    // Measure allocations after establishing resting liquidity.
+    const Order resting_probe(920010, Side::SELL, 16000, 20);
+    const Order incoming_probe(920011, Side::SELL, 16000, 10);
+
+    std::size_t existing_level_attempts = 0;
+
+    {
+        AllocationController::reset();
+
+        OrderBook probe;
+
+        CHECK(probe.add_order(resting_probe));
+
+        // Count only the second insertion.
+        AllocationController::reset();
+
+        CHECK(probe.add_order(incoming_probe));
+
+        existing_level_attempts = AllocationController::attempts();
+    }
+
+    AllocationController::reset();
+
+    CHECK(existing_level_attempts > 0);
+
+    for (std::size_t fail_at = 1;
+         fail_at <= existing_level_attempts;
+         ++fail_at) {
+        AllocationController::reset();
+
+        OrderBook book;
+
+        const Order resting(920010, Side::SELL, 16000, 20);
+        const Order incoming(920011, Side::SELL, 16000, 10);
+
+        CHECK(book.add_order(resting));
+
+        AllocationController::fail_on(fail_at);
+
+        bool threw = false;
+        try {
+            book.add_order(incoming);
+        } catch (const std::bad_alloc&) {
+            threw = true;
+        }
+
+        const auto attempts = AllocationController::attempts();
+        AllocationController::reset();
+
+        CHECK(threw);
+        CHECK(attempts == fail_at);
+
+        CHECK(book.order_count() == 1);
+        CHECK(book.contains(resting.id()));
+        CHECK(book.was_order_id_used(resting.id()));
+        CHECK(!book.contains(incoming.id()));
+        CHECK(!book.was_order_id_used(incoming.id()));
+
+        CHECK((book.order_ids_at_price(
+            Side::SELL, 16000
+        ) == std::vector<OrderId>{920010}));
+
+        CHECK(book.validate_invariants());
+
+        // Retry must append after the original order.
+        CHECK(book.add_order(incoming));
+
+        CHECK((book.order_ids_at_price(
+            Side::SELL, 16000
+        ) == std::vector<OrderId>{920010, 920011}));
+
+        CHECK(book.validate_invariants());
+    }
+}
+#endif
+
 int main() {
     test_empty_book();
     test_best_prices();
@@ -840,6 +1322,38 @@ int main() {
     test_execute_best_order_fifo_same_price();
     test_execute_best_order_invalid_quantity_leaves_book_unchanged();
     test_execute_best_order_subsequent_matching_after_full_fill();
+
+#ifdef MATCHING_ENGINE_TESTING
+    test_new_buy_price_level_allocation_failure();
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+    test_new_buy_list_allocation_failure();
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+    test_new_buy_index_allocation_failure();
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+    test_new_buy_index_bucket_allocation_failure();
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+    test_new_buy_historical_id_allocation_failure();
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+    test_new_buy_historical_id_bucket_allocation_failure();
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+    test_existing_buy_price_level_allocation_failures();
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+    test_sell_side_allocation_failures();
+#endif
 
     std::cout << "All OrderBook tests passed.\n";
     return 0;

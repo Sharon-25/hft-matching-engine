@@ -28,7 +28,18 @@ struct MarketOrderAccounting {
 class MatchingEngine {
 private:
     OrderBook book_;
-    std::unordered_set<OrderId> accepted_order_ids_;
+#ifdef MATCHING_ENGINE_TESTING
+    using AcceptedOrderIds = std::unordered_set<
+        OrderId,
+        std::hash<OrderId>,
+        std::equal_to<OrderId>,
+        testing::TestingAllocator<OrderId>
+    >;
+#else
+    using AcceptedOrderIds = std::unordered_set<OrderId>;
+#endif
+
+    AcceptedOrderIds accepted_order_ids_;
     std::vector<Trade> trades_;
 
 public:

@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "matching_engine/MatchingEngine.hpp"
+#include "matching_engine/TestingAllocator.hpp"
 
 using namespace matching_engine;
 
@@ -2718,6 +2719,236 @@ void test_engine_market_maximum_quantity_multiple_trades() {
     CHECK(engine.was_order_id_accepted(8603));
 }
 
+#ifdef MATCHING_ENGINE_TESTING
+void test_engine_id_reservation_allocation_failures() {
+    using matching_engine::testing::AllocationController;
+
+    for (OrderType type : {OrderType::LIMIT, OrderType::MARKET}) {
+        AllocationController::reset();
+
+        MatchingEngine engine;
+
+        const Order incoming(
+            930001,
+            Side::BUY,
+            type,
+            type == OrderType::LIMIT ? 15000 : 0,
+            10
+        );
+
+        // Fail the first real engine allocation:
+        // accepted_order_ids_.insert().
+        AllocationController::fail_on(1);
+
+        bool threw = false;
+
+        try {
+            if (type == OrderType::LIMIT) {
+                engine.submit_limit_order(incoming);
+            } else {
+                engine.submit_market_order(incoming);
+            }
+        } catch (const std::bad_alloc&) {
+            threw = true;
+        }
+
+        const auto attempts = AllocationController::attempts();
+        AllocationController::reset();
+
+        CHECK(threw);
+        CHECK(attempts == 1);
+
+        // No ID consumption or book mutation.
+        CHECK(!engine.was_order_id_accepted(incoming.id()));
+        CHECK(!engine.order_book().was_order_id_used(incoming.id()));
+        CHECK(engine.order_book().order_count() == 0);
+        CHECK(engine.trades().empty());
+        CHECK(engine.order_book().validate_invariants());
+
+        // Same ID must remain available.
+        const SubmissionResult retry =
+            type == OrderType::LIMIT
+                ? engine.submit_limit_order(incoming)
+                : engine.submit_market_order(incoming);
+
+        CHECK(retry.status == SubmissionStatus::ACCEPTED);
+        CHECK(engine.was_order_id_accepted(incoming.id()));
+        CHECK(engine.order_book().validate_invariants());
+    }
+}
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+void test_engine_book_allocation_failure_rollback() {
+    using matching_engine::testing::AllocationController;
+
+    const Order resting(940001, Side::SELL, 16000, 20);
+    const Order incoming(940002, Side::BUY, 15000, 10);
+
+    // Measure allocations using the same initial engine state.
+    AllocationController::reset();
+
+    std::size_t total_attempts = 0;
+
+    {
+        MatchingEngine probe;
+
+        CHECK(probe.submit_limit_order(resting).status ==
+              SubmissionStatus::ACCEPTED);
+
+        AllocationController::reset();
+
+        CHECK(probe.submit_limit_order(incoming).status ==
+              SubmissionStatus::ACCEPTED);
+
+        total_attempts = AllocationController::attempts();
+    }
+
+    AllocationController::reset();
+    CHECK(total_attempts >= 2);
+
+    // Attempt 1 belongs to engine-level ID reservation.
+    // Exercise subsequent tracked allocation sites.
+    for (std::size_t fail_at = 2;
+         fail_at <= total_attempts;
+         ++fail_at) {
+
+        AllocationController::reset();
+
+        MatchingEngine engine;
+
+        CHECK(engine.submit_limit_order(resting).status ==
+              SubmissionStatus::ACCEPTED);
+
+        AllocationController::fail_on(fail_at);
+
+        bool threw = false;
+
+        try {
+            engine.submit_limit_order(incoming);
+        } catch (const std::bad_alloc&) {
+            threw = true;
+        }
+
+        const auto attempts = AllocationController::attempts();
+        AllocationController::reset();
+
+        CHECK(threw);
+        CHECK(attempts == fail_at);
+
+        CHECK(engine.order_book().order_count() == 1);
+        CHECK(engine.order_book().contains(resting.id()));
+
+        const Order* unchanged =
+            engine.order_book().find_order(resting.id());
+
+        CHECK(unchanged != nullptr);
+        CHECK(unchanged->remaining_quantity() == 20);
+        CHECK(unchanged->executed_quantity() == 0);
+
+        CHECK(!engine.order_book().contains(incoming.id()));
+        CHECK(!engine.order_book().was_order_id_used(incoming.id()));
+        CHECK(!engine.was_order_id_accepted(incoming.id()));
+
+        CHECK(engine.trades().empty());
+        CHECK(engine.order_book().validate_invariants());
+
+        const SubmissionResult retry =
+            engine.submit_limit_order(incoming);
+
+        CHECK(retry.status == SubmissionStatus::ACCEPTED);
+        CHECK(engine.was_order_id_accepted(incoming.id()));
+        CHECK(engine.order_book().contains(incoming.id()));
+        CHECK(engine.order_book().validate_invariants());
+    }
+}
+#endif
+
+#ifdef MATCHING_ENGINE_TESTING
+void test_engine_trade_history_allocation_failure() {
+    using matching_engine::testing::AllocationController;
+
+    for (OrderType type : {OrderType::LIMIT, OrderType::MARKET}) {
+        AllocationController::reset();
+
+        MatchingEngine engine;
+
+        // Establish resting liquidity before enabling failure injection.
+        const Order resting(950001, Side::SELL, 11000, 100);
+
+        CHECK(
+            engine.submit_limit_order(resting).status ==
+            SubmissionStatus::ACCEPTED
+        );
+
+        const Order incoming(
+            950002,
+            Side::BUY,
+            type,
+            type == OrderType::LIMIT ? 11500 : 0,
+            100
+        );
+
+        CHECK(engine.order_book().order_count() == 1);
+        CHECK(engine.trades().empty());
+
+        AllocationController::fail_on_trade_history();
+
+        bool threw = false;
+
+        try {
+            if (type == OrderType::LIMIT) {
+                engine.submit_limit_order(incoming);
+            } else {
+                engine.submit_market_order(incoming);
+            }
+        } catch (const std::bad_alloc&) {
+            threw = true;
+        }
+
+        AllocationController::reset();
+
+        CHECK(threw);
+
+        // Resting order must remain unchanged.
+        CHECK(engine.order_book().order_count() == 1);
+        CHECK(engine.order_book().contains(resting.id()));
+
+        const Order* unchanged =
+            engine.order_book().find_order(resting.id());
+
+        CHECK(unchanged != nullptr);
+        CHECK(unchanged->remaining_quantity() == 100);
+        CHECK(unchanged->executed_quantity() == 0);
+
+        // No trade may be recorded.
+        CHECK(engine.trades().empty());
+
+        // Failed incoming ID must remain reusable.
+        CHECK(!engine.was_order_id_accepted(incoming.id()));
+        CHECK(!engine.order_book().was_order_id_used(incoming.id()));
+        CHECK(!engine.order_book().contains(incoming.id()));
+
+        CHECK(engine.order_book().validate_invariants());
+
+        // Retry with failure injection disabled.
+        const SubmissionResult retry =
+            type == OrderType::LIMIT
+                ? engine.submit_limit_order(incoming)
+                : engine.submit_market_order(incoming);
+
+        CHECK(retry.status == SubmissionStatus::ACCEPTED);
+        CHECK(retry.executed_quantity == 100);
+        CHECK(retry.remaining_quantity == 0);
+
+        CHECK(engine.was_order_id_accepted(incoming.id()));
+        CHECK(engine.order_book().order_count() == 0);
+        CHECK(engine.trades().size() == 1);
+        CHECK(engine.order_book().validate_invariants());
+    }
+}
+#endif
+
 int main() {
     test_engine_starts_with_empty_book();
     test_engine_is_not_copyable_or_movable();
@@ -2773,6 +3004,12 @@ int main() {
     test_engine_maximum_quantity_multiple_trades();
     test_engine_maximum_quantity_partial_multi_trade();
     test_engine_market_maximum_quantity_multiple_trades();
+
+#ifdef MATCHING_ENGINE_TESTING
+    test_engine_id_reservation_allocation_failures();
+    test_engine_book_allocation_failure_rollback();
+    test_engine_trade_history_allocation_failure();
+#endif
 
     std::cout << "MatchingEngine tests passed\n";
     return 0;
