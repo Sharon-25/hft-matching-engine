@@ -1,8 +1,11 @@
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <future>
 #include <new>
 #include <stdexcept>
+#include <thread>
+#include <vector>
 
 #include "matching_engine/MatchingWorker.hpp"
 
@@ -233,6 +236,262 @@ void test_matching_exception_reaches_future_and_worker_recovers() {
 
 #endif
 
+void test_multiple_concurrent_producers() {
+    constexpr int producer_count = 4;
+    constexpr int orders_per_producer = 250;
+    constexpr int total_orders =
+        producer_count * orders_per_producer;
+
+    MatchingWorker worker(32);
+
+    std::atomic<int> accepted_count{0};
+    std::atomic<int> failed_count{0};
+
+    std::vector<std::thread> producers;
+
+    for (int producer_id = 0;
+         producer_id < producer_count;
+         ++producer_id) {
+
+        producers.emplace_back([&, producer_id] {
+            for (int i = 0;
+                 i < orders_per_producer;
+                 ++i) {
+
+                const OrderId id =
+                    10000 + producer_id * orders_per_producer + i;
+
+                auto future = worker.submit(
+                    Order(
+                        id,
+                        Side::BUY,
+                        10000,
+                        1
+                    )
+                );
+
+                const auto result = future.get();
+
+                if (result.status ==
+                    SubmissionStatus::ACCEPTED &&
+                    result.executed_quantity == 0 &&
+                    result.remaining_quantity == 1) {
+                    accepted_count.fetch_add(
+                        1, std::memory_order_relaxed
+                    );
+                } else {
+                    failed_count.fetch_add(
+                        1, std::memory_order_relaxed
+                    );
+                }
+            }
+        });
+    }
+
+    for (auto& producer : producers) {
+        producer.join();
+    }
+
+    worker.shutdown();
+
+    CHECK(accepted_count.load() == total_orders);
+    CHECK(failed_count.load() == 0);
+}
+
+void test_multiple_outstanding_futures() {
+    constexpr int producer_count = 4;
+    constexpr int orders_per_producer = 250;
+    constexpr int total_orders =
+        producer_count * orders_per_producer;
+
+    MatchingWorker worker(16);
+
+    std::atomic<int> accepted_count{0};
+    std::atomic<int> failed_count{0};
+
+    std::vector<std::thread> producers;
+
+    for (int producer_id = 0;
+         producer_id < producer_count;
+         ++producer_id) {
+
+        producers.emplace_back([&, producer_id] {
+            std::vector<std::future<SubmissionResult>> futures;
+            futures.reserve(orders_per_producer);
+
+            // Submit all orders before waiting for results.
+            for (int i = 0;
+                 i < orders_per_producer;
+                 ++i) {
+
+                const OrderId id =
+                    20000 + producer_id * orders_per_producer + i;
+
+                futures.push_back(
+                    worker.submit(
+                        Order(
+                            id,
+                            Side::BUY,
+                            10000,
+                            1
+                        )
+                    )
+                );
+            }
+
+            // Retrieve results after submission.
+            for (auto& future : futures) {
+                const auto result = future.get();
+
+                if (result.status ==
+                        SubmissionStatus::ACCEPTED &&
+                    result.executed_quantity == 0 &&
+                    result.remaining_quantity == 1) {
+
+                    accepted_count.fetch_add(
+                        1, std::memory_order_relaxed
+                    );
+
+                } else {
+                    failed_count.fetch_add(
+                        1, std::memory_order_relaxed
+                    );
+                }
+            }
+        });
+    }
+
+    for (auto& producer : producers) {
+        producer.join();
+    }
+
+    worker.shutdown();
+
+    CHECK(accepted_count.load() == total_orders);
+    CHECK(failed_count.load() == 0);
+}
+
+void test_concurrent_duplicate_order_ids() {
+    constexpr int producer_count = 4;
+    constexpr OrderId shared_order_id = 30000;
+
+    MatchingWorker worker(4);
+
+    std::atomic<int> accepted_count{0};
+    std::atomic<int> duplicate_count{0};
+    std::atomic<int> unexpected_count{0};
+
+    std::atomic<int> ready_count{0};
+    std::atomic<bool> start{false};
+
+    std::vector<std::thread> producers;
+
+    for (int i = 0; i < producer_count; ++i) {
+        producers.emplace_back([&] {
+            ready_count.fetch_add(
+                1, std::memory_order_release
+            );
+
+            while (!start.load(
+                std::memory_order_acquire
+            )) {
+                std::this_thread::yield();
+            }
+
+            auto future = worker.submit(
+                Order(
+                    shared_order_id,
+                    Side::BUY,
+                    10000,
+                    1
+                )
+            );
+
+            const auto result = future.get();
+
+            if (result.status ==
+                SubmissionStatus::ACCEPTED) {
+                accepted_count.fetch_add(
+                    1, std::memory_order_relaxed
+                );
+            } else if (
+                result.status ==
+                SubmissionStatus::DUPLICATE_ID
+            ) {
+                duplicate_count.fetch_add(
+                    1, std::memory_order_relaxed
+                );
+            } else {
+                unexpected_count.fetch_add(
+                    1, std::memory_order_relaxed
+                );
+            }
+        });
+    }
+
+    while (ready_count.load(
+        std::memory_order_acquire
+    ) != producer_count) {
+        std::this_thread::yield();
+    }
+
+    start.store(true, std::memory_order_release);
+
+    for (auto& producer : producers) {
+        producer.join();
+    }
+
+    worker.shutdown();
+
+    CHECK(accepted_count.load() == 1);
+    CHECK(duplicate_count.load() == producer_count - 1);
+    CHECK(unexpected_count.load() == 0);
+}
+
+void test_worker_preserves_queue_submission_order() {
+    MatchingWorker worker(4);
+
+    // First command: resting sell liquidity.
+    auto resting = worker.submit(
+        Order(40001, Side::SELL, 10500, 10)
+    );
+
+    // Second command: market buy consumes the liquidity.
+    auto market = worker.submit(
+        Order(
+            40002,
+            Side::BUY,
+            OrderType::MARKET,
+            0,
+            10
+        )
+    );
+
+    // Third command: limit buy arrives after the market buy.
+    auto limit = worker.submit(
+        Order(40003, Side::BUY, 10500, 5)
+    );
+
+    const auto resting_result = resting.get();
+    const auto market_result = market.get();
+    const auto limit_result = limit.get();
+
+    CHECK(resting_result.status ==
+          SubmissionStatus::ACCEPTED);
+
+    CHECK(market_result.status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(market_result.executed_quantity == 10);
+    CHECK(market_result.remaining_quantity == 0);
+
+    CHECK(limit_result.status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(limit_result.executed_quantity == 0);
+    CHECK(limit_result.remaining_quantity == 5);
+
+    worker.shutdown();
+}
+
 int main() {
     test_limit_orders_through_worker();
     test_market_orders_through_worker();
@@ -241,6 +500,10 @@ int main() {
     test_shutdown_rejects_new_submissions();
     test_shutdown_drains_accepted_commands();
     test_destructor_drains_accepted_commands();
+    test_multiple_concurrent_producers();
+    test_multiple_outstanding_futures();
+    test_concurrent_duplicate_order_ids();
+    test_worker_preserves_queue_submission_order();
 
 #ifdef MATCHING_ENGINE_TESTING
     test_matching_exception_reaches_future_and_worker_recovers();
