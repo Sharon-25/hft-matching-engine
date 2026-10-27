@@ -166,4 +166,20 @@ if(BUILD_TESTING)
         NAME MatchingEngineTests
         COMMAND matching_engine_tests
     )
+
+    add_executable(
+        bounded_blocking_queue_tests
+        tests/BoundedBlockingQueueTests.cpp
+    )
+
+    target_link_libraries(
+        bounded_blocking_queue_tests
+        PRIVATE
+        matching_core_testing
+    )
+
+    add_test(
+        NAME BoundedBlockingQueueTests
+        COMMAND bounded_blocking_queue_tests
+    )
 endif()
