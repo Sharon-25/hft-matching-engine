@@ -102,7 +102,7 @@
       Historical df85fa5 was not independently re-executed.
       Evidence: docs/VERIFICATION_LOG.md and archived logs.
 
-### Phase 6 remaining verification
+### Phase 6.3 — Final correctness and robustness verification
 
 - [x] P6-11: Complete deterministic quantity-boundary and arithmetic-overflow verification.
       Tests cover maximum OrderId, Quantity and Price values,
@@ -113,60 +113,454 @@
       accumulation, guarded trade-vector capacity arithmetic,
       direct price comparisons and container-derived order counts.
       No arithmetic-overflow defect identified in audited paths.
-- [ ] P6-12: Add deterministic fault injection at actual allocation operations; verify exception and state guarantees beyond manual insertion checkpoints.
-- [ ] P6-13: Audit all operations after the first irreversible trade for exceptions, including finalization. Do not claim a global strong exception guarantee until established.
-- [ ] P6-14: Extend differential verification to seeded randomized operation sequences and cancellation operations once the appropriate engine API is designed.
-- [ ] P6-15: Isolate MATCHING_ENGINE_TESTING and failure-injection hooks from production builds; it is currently a PUBLIC compile definition on matching_core.
+- [x] P6-12: Add deterministic fault injection at actual
+      allocation operations.
+      Implemented allocator/container failure tests covering
+      admission, ID reservation, insertion rollback and
+      trade-history allocation behavior.
+      Debug and Release regression tests passed.
+      Commit: f19d45d.
+- [x] P6-13: Audit operations after the first irreversible
+      trade, including exception behavior and finalization.
+      Completed the planned source-level exception-safety
+      audit.
+      Do not interpret this as proof of a universal strong
+      exception guarantee for every possible failure.
+- [x] P6-14: Extend differential verification to seeded
+      randomized operation sequences.
+      Implemented reproducible SplitMix64-based tests using
+      five seeds and 1,000 operations per seed.
+      Covered LIMIT and MARKET submissions, duplicate IDs
+      and matching-state comparisons.
+      Debug and Release regression tests passed.
+      Commit: 6c49ddd.
+      Randomized cancellation coverage remains a separate
+      follow-up because cancellation was not included in
+      the original completed randomized suite.
+- [x] P6-15: Isolate MATCHING_ENGINE_TESTING and
+      failure-injection hooks from production builds.
+      Separated matching_core and matching_core_testing.
+      Verified Debug and Release builds.
+      Commit: db058b7.
 
-## Later phases
+## Phase 7 — Concurrent Order Processing
+### Phase 7.1 — Concurrency architecture and contracts
 
-- [ ] Add seeded randomized operation-sequence tests and reproduce failures from recorded seeds (see P6-14).
-- [ ] Verify exception behavior of every operation performed after the first trade, including finalization (see P6-13).
-- [ ] Inject failures at actual allocator operations and verify recovery, beyond manually inserted failure checkpoints.
-- [ ] Isolate MATCHING_ENGINE_TESTING and test-only failure hooks from production builds.
-- [ ] Review duplicated session-ID state in MatchingEngine and OrderBook.
-- [ ] Define how trade history is bounded or consumed in long-running sessions.
-- [ ] Add stronger boundary tests and randomized operation-sequence tests.
-- [ ] Benchmark preflight trade counting and incoming-order staging.
-- [ ] Review market SELL preflight crossing-bound asymmetry. Price{0} is correct under the current strictly positive limit-price model. Consider using std::numeric_limits<Price>::min() for symmetry and future price-model extensions.
-- [ ] Session-wide identity ownership across multiple books.
-- [ ] Concurrent submission architecture and thread-safety tests.
-- [ ] Deterministic order processing and execution sequencing.
-- [ ] Latency and throughput benchmark harness.
-- [ ] p50, p95, p99 and maximum latency reporting.
-- [ ] Allocation and cache profiling.
-- [ ] Measured performance optimizations.
-- [ ] Reproducible Release builds.
-- [ ] Application usage and deployment documentation.
-- [ ] Final correctness, performance and limitations report.
+- [x] P7-01: Define the concurrency architecture.
+      Multiple producer threads submit commands into a bounded
+      FIFO queue.
+      A single dedicated matching worker owns MatchingEngine
+      and performs all order-book mutations.
+      Producers do not mutate the order book directly.
+- [x] P7-02: Establish deterministic processing semantics.
+      Commands execute in FIFO queue-insertion order.
+      Concurrent submission call order is not guaranteed to
+      equal queue-insertion order.
+      Price-time priority remains enforced within the
+      matching engine.
+- [x] P7-03: Define asynchronous result delivery.
+      Producers receive std::future results backed by
+      std::promise objects.
+      Successful operations return their normal results.
+      Processing exceptions are propagated to the
+      corresponding futures.
+
+### Phase 7.2 — Bounded blocking FIFO queue
+
+- [x] P7-04: Implement BoundedBlockingQueue<T>.
+      Uses std::mutex, std::condition_variable and std::deque.
+      Supports bounded capacity, blocking push(), blocking
+      pop() and close().
+      Supports move-only command payloads.
+- [x] P7-05: Implement queue backpressure.
+      Producers wait when the queue reaches capacity.
+      Consumers wait when the queue is empty.
+      Condition variables coordinate producer and
+      consumer progress.
+- [x] P7-06: Implement queue closure semantics.
+      Closing the queue prevents new insertions.
+      Blocked producers and consumers are notified.
+      Previously accepted items remain available for draining.
+- [x] P7-07: Add bounded queue correctness tests.
+      Verify FIFO behavior, capacity enforcement,
+      blocking and wake-up behavior, closure semantics,
+      move-only payload handling and related invariants.
+- [x] P7-08: Complete bounded queue verification and commit.
+      Debug and Release regression tests passed.
+      Bounded queue implementation committed.
+
+### Phase 7.3 — Dedicated matching worker
+
+- [x] P7-09: Introduce MatchingCommand.
+      Encapsulates an Order and
+      std::promise<SubmissionResult>.
+      Copy operations are disabled.
+      Nothrow move construction is enforced.
+- [x] P7-10: Implement MatchingWorker.
+      Owns MatchingEngine, BoundedBlockingQueue and
+      a dedicated std::jthread.
+      MatchingEngine state is mutated exclusively
+      by the matching worker.
+- [x] P7-11: Implement asynchronous order submission.
+      MatchingWorker::submit(Order) returns
+      std::future<SubmissionResult>.
+      LIMIT and MARKET orders are dispatched to their
+      respective MatchingEngine methods.
+- [x] P7-12: Implement worker exception propagation.
+      Exceptions during command processing are captured
+      using std::current_exception() and delivered through
+      std::promise::set_exception().
+      A failed command does not automatically terminate
+      the worker's processing loop.
+- [x] P7-13: Implement initial worker lifecycle management.
+      MatchingWorker::shutdown() closes the queue and
+      joins the worker thread.
+      The destructor invokes shutdown().
+      Already accepted commands are drained under
+      the implemented shutdown policy.
+- [x] P7-14: Add test-only worker failure injection.
+      submit_with_failure_for_test() associates an
+      insertion failure checkpoint with an individual
+      command.
+      Failure injection is reset for subsequent commands.
+- [x] P7-15: Verify dedicated worker behavior.
+      Tests cover LIMIT/MARKET submissions, duplicate IDs,
+      FIFO processing, shutdown rejection, accepted-command
+      draining, destructor behavior, exception propagation
+      and recovery after injected failures.
+      Debug and Release tests passed.
+- [x] P7-16: Commit dedicated matching worker implementation.
+      Commit: e90a6c0
+      Message: Implement dedicated matching worker with
+      asynchronous results.
+
+### Phase 7.4 — Concurrent submission API verification
+
+- [x] P7-17: Verify concurrent submissions from multiple producers.
+      Four producer threads submit 250 non-crossing
+      LIMIT orders each.
+      Verify all accepted submissions and expected
+      execution accounting.
+- [x] P7-18: Verify concurrent submissions under backpressure.
+      Four producers submit 250 orders each before
+      retrieving their futures.
+      Bounded queue capacity: 16.
+      Verify successful completion without lost results.
+- [x] P7-19: Verify duplicate OrderId handling under concurrency.
+      Four producers concurrently submit the same OrderId.
+      Verify exactly one accepted submission and three
+      duplicate-ID rejections.
+- [x] P7-20: Verify observable FIFO command processing.
+      Submit a resting SELL order, a MARKET BUY and
+      a subsequent LIMIT BUY.
+      Verify that the MARKET order consumes the resting
+      liquidity before the later LIMIT order executes.
+- [x] P7-21: Complete concurrent submission regression verification.
+      All six CTest suites passed in Debug and Release.
+      Matching worker tests were also repeated successfully
+      across multiple direct executions.
+- [x] P7-22: Commit concurrent submission tests.
+      Commit: 9f19183
+      Message: Verify concurrent matching submissions
+      and FIFO processing.
+
+### Phase 7.5 — Cancellation through the matching worker
+
+- [x] P7-23: Define cancellation semantics.
+      Cancellation operates on active resting orders.
+      A successful cancellation removes the remaining
+      quantity from the active order book.
+      Unknown, already cancelled and fully filled
+      orders cannot be cancelled.
+      Previously accepted OrderIds remain reserved.
+- [x] P7-24: Expose cancellation through MatchingEngine.
+      Add MatchingEngine::cancel_order(OrderId).
+      Delegate to OrderBook::cancel_order(OrderId).
+      Preserve existing book-level cancellation behavior.
+- [x] P7-25: Extend the worker command representation.
+      Introduce CancelCommand containing an OrderId
+      and std::promise<bool>.
+      Use std::variant<MatchingCommand, CancelCommand>
+      as WorkerCommand.
+      Enforce nothrow move construction.
+- [x] P7-26: Add asynchronous cancellation API.
+      MatchingWorker::cancel(OrderId) returns
+      std::future<bool>.
+      Cancellation commands enter the same bounded
+      FIFO queue as order submissions.
+- [x] P7-27: Implement worker-side cancellation dispatch.
+      Use std::get_if to distinguish submission and
+      cancellation commands.
+      Execute both operations on the dedicated
+      matching worker thread.
+      Deliver results and exceptions through the
+      corresponding command promises.
+- [x] P7-28: Verify basic cancellation behavior.
+      Tests cover:
+      - Successful cancellation of an active order.
+      - Repeated cancellation returning false.
+      - Cancellation of an unknown OrderId.
+      - Cancellation after a complete fill.
+      - Cancellation before a crossing submission.
+- [x] P7-29: Verify partially filled order cancellation.
+      Resting SELL quantity 10 receives a partial fill
+      of quantity 4.
+      Cancellation removes the remaining quantity 6.
+      A later crossing BUY executes zero quantity
+      against the cancelled order.
+- [x] P7-30: Verify historical OrderId preservation.
+      Cancel an accepted order.
+      Submit another order using the same OrderId.
+      Verify SubmissionStatus::DUPLICATE_ID.
+- [x] P7-31: Verify cancellation during shutdown.
+      Submit an order and enqueue its cancellation.
+      Invoke shutdown before retrieving the results.
+      Verify both accepted commands complete.
+      Verify cancellation requests made after shutdown
+      are rejected.
+- [x] P7-32: Complete cancellation regression verification.
+      Debug build successful.
+      Debug CTest: 6/6 passed.
+      Debug total test time: 7.01 seconds.
+      Release build successful.
+      Release CTest: 6/6 passed.
+      Release total test time: 2.33 seconds.
+      git diff --check reported no whitespace errors.
+      LF/CRLF conversion warnings were observed on Windows.
+- [ ] P7-33: Commit Phase 7.5 cancellation implementation.
+      Stage MatchingCommand.hpp, MatchingEngine.hpp,
+      MatchingWorker.hpp, MatchingEngine.cpp,
+      MatchingWorker.cpp, MatchingWorkerTests.cpp
+      and the updated engineering backlog.
+      Commit message:
+      Add FIFO-ordered cancellation through matching worker
+      Record the resulting commit hash after committing.
+
+### Phase 7.6 — Shutdown, backpressure and failure handling
+
+- [ ] P7-34: Review shutdown and backpressure contracts.
+      Inspect the current queue and worker implementations.
+      Identify guarantees already covered by queue-level
+      tests and those requiring worker-level verification.
+- [ ] P7-35: Verify blocked producers during shutdown.
+      Ensure producers waiting for queue capacity wake
+      when the queue closes.
+      Verify rejected commands cannot remain blocked
+      indefinitely.
+- [ ] P7-36: Verify draining of all accepted commands.
+      Accepted submissions and cancellations must
+      complete before shutdown returns.
+      Verify their futures become ready with either
+      a result or an exception.
+- [ ] P7-37: Verify concurrent shutdown boundaries.
+      Test submissions and cancellations racing with
+      shutdown.
+      Verify that accepted commands are processed
+      and rejected commands report failure correctly.
+- [ ] P7-38: Verify repeated shutdown behavior.
+      Confirm shutdown is safe when invoked repeatedly
+      in supported usage scenarios.
+      Review concurrent shutdown calls separately
+      before claiming thread-safe shutdown invocation.
+- [ ] P7-39: Verify exception recovery.
+      Test failure propagation through futures.
+      Confirm subsequent commands can continue
+      processing after recoverable failures.
+- [ ] P7-40: Add deterministic lifecycle and backpressure tests.
+      Prefer explicit synchronization over arbitrary
+      sleep-based timing assumptions.
+      Avoid introducing flaky scheduling-dependent tests.
+- [ ] P7-41: Complete Debug/Release verification,
+      document shutdown guarantees and commit Phase 7.6.
+
+### Phase 7.7 — Concurrent correctness and ordering
+
+- [ ] P7-42: Expand multi-producer correctness tests.
+      Include mixed LIMIT, MARKET and CANCEL commands.
+- [ ] P7-43: Verify matching invariants under concurrent input.
+      Confirm price-time priority, quantity conservation,
+      active-order consistency and historical ID uniqueness.
+- [ ] P7-44: Verify ordering-sensitive cancellation races.
+      Test submit-before-cancel, cancel-before-submit
+      and crossing-order interactions using explicitly
+      established queue insertion order.
+- [ ] P7-45: Add reproducible concurrent stress tests.
+      Record seeds and relevant execution conditions
+      for reproducibility where applicable.
+- [ ] P7-46: Complete Phase 7.7 regression verification
+      and commit.
+
+### Phase 7.8 — Thread-safety validation and documentation
+
+- [ ] P7-47: Audit shared-state ownership and access.
+      Ensure producers cannot access mutable engine
+      state without appropriate synchronization.
+- [ ] P7-48: Audit queue synchronization and lock scope.
+      Review mutex ownership, condition-variable
+      predicates, closure behavior and deadlock risks.
+- [ ] P7-49: Review worker lifetime and shutdown safety.
+      Verify object lifetime assumptions and supported
+      concurrent API usage.
+- [ ] P7-50: Evaluate available concurrency diagnostics.
+      Use suitable race-detection or sanitizer tools
+      where supported by the build environment.
+      Document unavailable diagnostics honestly.
+- [ ] P7-51: Document concurrency architecture,
+      ordering guarantees, backpressure policy,
+      shutdown behavior and known limitations.
+- [ ] P7-52: Complete Phase 7 regression verification
+      and commit.
+
+## Phase 8 — Latency Benchmarking and Profiling
+
+- [ ] P8-01: Define benchmark methodology and workload.
+      Separate single-thread matching latency from
+      asynchronous end-to-end submission latency.
+- [ ] P8-02: Implement reproducible benchmark harness.
+      Use Release builds and controlled workloads.
+- [ ] P8-03: Benchmark LIMIT order submissions.
+- [ ] P8-04: Benchmark MARKET order submissions.
+- [ ] P8-05: Benchmark cancellation operations.
+- [ ] P8-06: Benchmark concurrent producer throughput
+      and bounded-queue backpressure.
+- [ ] P8-07: Report latency distribution.
+      Include p50, p95, p99 and maximum latency.
+- [ ] P8-08: Measure throughput under different workloads
+      and queue capacities.
+- [ ] P8-09: Profile allocation behavior, memory usage
+      and cache-related performance where tooling permits.
+- [ ] P8-10: Measure preflight trade-counting and
+      incoming-order staging costs.
+- [ ] P8-11: Record hardware, compiler, optimization flags,
+      benchmark inputs and measurement limitations.
+- [ ] P8-12: Complete baseline performance report
+      and commit Phase 8.
+
+## Phase 9 — Optimization, Documentation and Release
+
+- [ ] P9-01: Identify measured performance bottlenecks.
+- [ ] P9-02: Apply targeted optimizations supported
+      by benchmark evidence.
+- [ ] P9-03: Re-run correctness and concurrency tests
+      after each optimization.
+- [ ] P9-04: Compare optimized performance against
+      the recorded baseline.
+- [ ] P9-05: Review duplicated OrderId ownership between
+      MatchingEngine and OrderBook.
+- [ ] P9-06: Define trade-history consumption or
+      bounded-storage policy.
+- [ ] P9-07: Review session-wide identity ownership
+      across multiple order books.
+- [ ] P9-08: Review MARKET SELL preflight crossing-bound
+      assumptions and future price-model extensibility.
+- [ ] P9-09: Prepare reproducible production Release builds.
+- [ ] P9-10: Document application architecture,
+      build instructions, usage, testing and benchmarks.
+- [ ] P9-11: Prepare final correctness, performance
+      and known-limitations report.
+- [ ] P9-12: Complete final regression verification
+      and release documentation.
+
+## Later-phase and cross-phase verification
+
+- [x] Complete actual allocator-failure injection
+      and recovery verification (P6-12).
+      Commit: f19d45d.
+      Exhaustive failure coverage is not claimed.
+- [x] Complete post-trade exception-safety audit (P6-13).
+      The planned audit is complete.
+      A universal strong exception guarantee is not claimed.
+- [x] Add seeded randomized differential tests (P6-14).
+      Five seeds with 1,000 operations per seed.
+      Commit: 6c49ddd.
+- [x] Isolate test-only failure-injection hooks from
+      production builds (P6-15).
+      Commit: db058b7.
+- [ ] Extend the reference matching model and seeded
+      randomized differential tests to include cancellation.
+      Track separately from P7-45 concurrent stress testing.
+- [ ] Establish trade-history memory management policy
+      for long-running sessions (P9-06).
+- [ ] Benchmark preflight counting and incoming-order
+      staging overhead (P8-10).
+- [ ] Review duplicated engine-level and book-level
+      historical OrderId state (P9-05).
+- [ ] Validate all supported shutdown and concurrent
+      API interactions (P7-34 through P7-52).
+- [ ] Complete reproducible latency and throughput
+      benchmarking before making performance claims.
 
 ## Architecture decisions
 
-- C++20.
-- Integer price ticks.
-- Price-time priority.
-- FIFO within each price level.
+- C++20 is the implementation language.
+- Prices use integer ticks.
+- Orders follow price-time priority.
+- Orders at the same price level follow FIFO.
 - Trades execute at resting-order prices.
-- Accepted order IDs are unique within a session.
-- OrderBook owns resting orders.
-- MatchingEngine controls incoming order processing.
-- No direct external mutation of resting orders.
-- Correctness precedes optimization.
+- Accepted OrderIds remain unique within a session.
+- OrderBook owns active resting orders.
+- MatchingEngine controls order processing and matching.
+- External producers do not directly mutate resting orders.
+- Concurrent producers submit through a bounded FIFO queue.
+- A single dedicated matching worker owns MatchingEngine.
+- Matching operations are serialized on the worker thread.
+- Command processing follows actual queue-insertion order.
+- Submission and cancellation use the same command queue.
+- Asynchronous results use std::promise and std::future.
+- Command processing exceptions are propagated through futures.
+- Queue backpressure blocks producers when capacity is exhausted.
+- Queue closure rejects new commands and allows accepted
+  commands to drain.
+- Cancelled OrderIds remain reserved.
+- Correctness and reproducibility precede optimization.
+- Performance claims require measured benchmark evidence.
 
 ## Known limitations
 
-- Failure-safe admission has been verified for tested insertion failure points; exhaustive allocation-failure coverage is not yet established.
-- Test-only failure hooks are currently enabled in the main build (MATCHING_ENGINE_TESTING is PUBLIC on matching_core).
-- Trade history has no enforced memory bound.
-- Seven deterministic differential scenarios are implemented; seeded randomized book-invariant and differential testing remains incomplete.
-- BUY and SELL price-time priority is covered by deterministic tests; broader randomized sequences remain pending.
-- Debug and Release builds and CTest suites passed on a descendant
-  of df85fa5, with all three test executables passing in both
-  configurations. Raw execution logs are archived under docs/
-  and summarized in docs/VERIFICATION_LOG.md.
-  Historical commit df85fa5 was not independently re-executed.
-- No comprehensive strong exception guarantee is claimed for operations after irreversible trade execution.
-- ID uniqueness currently has both book-level and engine-level state.
-- Concurrency and benchmarking are not implemented.
-- Market SELL preflight uses Price{0}, which is correct for currently accepted positive limit prices but assumes that the price model will not admit zero or negative resting prices.
-- Trade-vector capacity is reserved before incoming-order staging. If staging fails, capacity may remain increased despite no trade occurring. The failure guarantee preserves logical trading state, not the previous memory allocation state.
+- Actual allocator-failure injection and recovery tests
+  were implemented under P6-12 (commit f19d45d).
+  Exhaustive coverage of every possible allocation
+  failure and exception path is not claimed.
+- No comprehensive strong exception guarantee is claimed
+  for all operations after irreversible trade execution.
+- Seeded randomized differential verification was
+  completed under P6-14 (commit 6c49ddd).
+  Five seeds with 1,000 operations per seed were tested.
+  Randomized cancellation coverage remains pending.
+- Trade history currently has no enforced memory bound.
+- Historical OrderId uniqueness is represented at both
+  MatchingEngine and OrderBook levels.
+  The duplicated ownership remains under review.
+- The matching engine uses a single worker thread.
+  Concurrent producers are supported, but matching
+  operations themselves are serialized.
+  This is a deliberate correctness and ordering decision.
+- FIFO processing is defined by queue insertion order,
+  not by the wall-clock order in which concurrent
+  producers begin their API calls.
+- Bounded queue backpressure can block producers.
+  Comprehensive shutdown-race and blocked-producer
+  verification remains pending under Phase 7.6.
+- Concurrent correctness stress testing with mixed
+  submission and cancellation workloads remains pending.
+- A comprehensive thread-safety and lifecycle audit
+  remains pending under Phase 7.8.
+- No production-grade latency or throughput benchmark
+  results have been established yet.
+- No performance superiority or HFT production-readiness
+  claim is made without benchmark and validation evidence.
+- MARKET SELL preflight currently uses Price{0}.
+  This is consistent with the existing strictly positive
+  resting limit-price model, but assumes the model will
+  not admit zero or negative resting prices.
+- Trade-vector capacity is reserved before incoming-order
+  staging. If staging fails, capacity may remain increased
+  despite no trade occurring.
+  The current guarantee preserves logical trading state,
+  not necessarily the previous memory allocation state.
+- The latest Phase 7.5 verification passed all six CTest
+  suites in both Debug and Release.
+  These results establish tested functional behavior,
+  not exhaustive concurrency or exception safety.
+- Phase 7.5 cancellation changes have passed verification
+  but are awaiting their Git commit.

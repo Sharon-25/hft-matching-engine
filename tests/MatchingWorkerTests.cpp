@@ -492,6 +492,200 @@ void test_worker_preserves_queue_submission_order() {
     worker.shutdown();
 }
 
+void test_worker_cancellation() {
+    MatchingWorker worker(8);
+
+    // Submit an order that should rest in the book.
+    auto submission = worker.submit(
+        Order(50001, Side::SELL, 10500, 10)
+    );
+
+    // Queue cancellation after submission.
+    auto cancellation = worker.cancel(50001);
+
+    const auto submit_result = submission.get();
+    const bool cancelled = cancellation.get();
+
+    CHECK(submit_result.status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(submit_result.executed_quantity == 0);
+    CHECK(submit_result.remaining_quantity == 10);
+
+    CHECK(cancelled);
+
+    // Cancelling the same order twice must fail.
+    auto second_cancellation = worker.cancel(50001);
+    CHECK(!second_cancellation.get());
+
+    // An unknown order ID must also fail.
+    auto unknown_cancellation = worker.cancel(99999);
+    CHECK(!unknown_cancellation.get());
+
+    worker.shutdown();
+}
+
+void test_cancellation_after_full_fill() {
+    MatchingWorker worker(8);
+
+    auto resting = worker.submit(
+        Order(51001, Side::SELL, 10500, 10)
+    );
+
+    auto crossing = worker.submit(
+        Order(51002, Side::BUY, 10500, 10)
+    );
+
+    auto cancellation = worker.cancel(51001);
+
+    const auto resting_result = resting.get();
+    const auto crossing_result = crossing.get();
+
+    CHECK(resting_result.status ==
+          SubmissionStatus::ACCEPTED);
+
+    CHECK(crossing_result.status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(crossing_result.executed_quantity == 10);
+    CHECK(crossing_result.remaining_quantity == 0);
+
+    // Fully filled orders are no longer active.
+    CHECK(!cancellation.get());
+
+    worker.shutdown();
+}
+
+void test_cancellation_prevents_future_match() {
+    MatchingWorker worker(8);
+
+    auto resting = worker.submit(
+        Order(52001, Side::SELL, 10500, 10)
+    );
+
+    auto cancellation = worker.cancel(52001);
+
+    // This BUY would have matched if the SELL still existed.
+    auto crossing = worker.submit(
+        Order(52002, Side::BUY, 10600, 10)
+    );
+
+    const auto resting_result = resting.get();
+    const bool cancelled = cancellation.get();
+    const auto crossing_result = crossing.get();
+
+    CHECK(resting_result.status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(cancelled);
+
+    CHECK(crossing_result.status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(crossing_result.executed_quantity == 0);
+    CHECK(crossing_result.remaining_quantity == 10);
+
+    worker.shutdown();
+}
+
+void test_cancel_partially_filled_order() {
+    MatchingWorker worker(8);
+
+    auto resting = worker.submit(
+        Order(53001, Side::SELL, 10500, 10)
+    );
+
+    auto crossing = worker.submit(
+        Order(53002, Side::BUY, 10500, 4)
+    );
+
+    auto cancellation = worker.cancel(53001);
+
+    // After cancellation, no remaining SELL liquidity
+    // should be available for the next BUY.
+    auto later_buy = worker.submit(
+        Order(53003, Side::BUY, 10500, 6)
+    );
+
+    const auto resting_result = resting.get();
+    const auto crossing_result = crossing.get();
+    const bool cancelled = cancellation.get();
+    const auto later_result = later_buy.get();
+
+    CHECK(resting_result.status ==
+          SubmissionStatus::ACCEPTED);
+
+    CHECK(crossing_result.status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(crossing_result.executed_quantity == 4);
+    CHECK(crossing_result.remaining_quantity == 0);
+
+    CHECK(cancelled);
+
+    CHECK(later_result.status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(later_result.executed_quantity == 0);
+    CHECK(later_result.remaining_quantity == 6);
+
+    worker.shutdown();
+}
+
+void test_cancelled_order_id_cannot_be_reused() {
+    MatchingWorker worker(8);
+
+    auto original = worker.submit(
+        Order(54001, Side::BUY, 10000, 10)
+    );
+
+    auto cancellation = worker.cancel(54001);
+
+    auto reused = worker.submit(
+        Order(54001, Side::BUY, 10100, 5)
+    );
+
+    const auto original_result = original.get();
+    const bool cancelled = cancellation.get();
+    const auto reused_result = reused.get();
+
+    CHECK(original_result.status ==
+          SubmissionStatus::ACCEPTED);
+
+    CHECK(cancelled);
+
+    CHECK(reused_result.status ==
+          SubmissionStatus::DUPLICATE_ID);
+
+    worker.shutdown();
+}
+
+void test_cancellation_drains_during_shutdown() {
+    MatchingWorker worker(8);
+
+    auto submission = worker.submit(
+        Order(55001, Side::SELL, 10500, 10)
+    );
+
+    auto cancellation = worker.cancel(55001);
+
+    // Shutdown must drain both accepted commands.
+    worker.shutdown();
+
+    const auto submission_result = submission.get();
+    const bool cancelled = cancellation.get();
+
+    CHECK(submission_result.status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(cancelled);
+
+    // No new cancellation may be accepted.
+    bool rejected = false;
+
+    try {
+        auto future = worker.cancel(55001);
+        (void)future;
+    } catch (const std::runtime_error&) {
+        rejected = true;
+    }
+
+    CHECK(rejected);
+}
+
 int main() {
     test_limit_orders_through_worker();
     test_market_orders_through_worker();
@@ -504,6 +698,12 @@ int main() {
     test_multiple_outstanding_futures();
     test_concurrent_duplicate_order_ids();
     test_worker_preserves_queue_submission_order();
+    test_worker_cancellation();
+    test_cancellation_after_full_fill();
+    test_cancellation_prevents_future_match();
+    test_cancel_partially_filled_order();
+    test_cancelled_order_id_cannot_be_reused();
+    test_cancellation_drains_during_shutdown();
 
 #ifdef MATCHING_ENGINE_TESTING
     test_matching_exception_reaches_future_and_worker_recovers();

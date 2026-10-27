@@ -23,8 +23,28 @@ std::future<SubmissionResult> MatchingWorker::submit(
     std::promise<SubmissionResult> promise;
     auto future = promise.get_future();
 
-    MatchingCommand command(
+    WorkerCommand command(
+        std::in_place_type<MatchingCommand>,
         std::move(order),
+        std::move(promise)
+    );
+
+    if (!queue_.push(std::move(command))) {
+        throw std::runtime_error(
+            "Matching worker is shutting down"
+        );
+    }
+
+    return future;
+}
+
+std::future<bool> MatchingWorker::cancel(OrderId id) {
+    std::promise<bool> promise;
+    auto future = promise.get_future();
+
+    WorkerCommand command(
+        std::in_place_type<CancelCommand>,
+        id,
         std::move(promise)
     );
 
@@ -47,12 +67,13 @@ MatchingWorker::submit_with_failure_for_test(
     std::promise<SubmissionResult> promise;
     auto future = promise.get_future();
 
-    MatchingCommand command(
+    WorkerCommand command(
+        std::in_place_type<MatchingCommand>,
         std::move(order),
         std::move(promise)
     );
 
-    command.failure_point = point;
+    std::get<MatchingCommand>(command).failure_point = point;
 
     if (!queue_.push(std::move(command))) {
         throw std::runtime_error(
@@ -67,40 +88,74 @@ MatchingWorker::submit_with_failure_for_test(
 
 void MatchingWorker::run() {
     while (auto command = queue_.pop()) {
-        try {
-#ifdef MATCHING_ENGINE_TESTING
-            engine_.set_insertion_failure_for_test(
-                command->failure_point.value_or(
-                    InsertionFailurePoint::NONE
-                )
-            );
-#endif
-            SubmissionResult result;
 
-            if (command->order.type() == OrderType::LIMIT) {
-                result = engine_.submit_limit_order(
-                    command->order
+        if (auto* submission =
+                std::get_if<MatchingCommand>(&*command)) {
+
+            try {
+#ifdef MATCHING_ENGINE_TESTING
+                engine_.set_insertion_failure_for_test(
+                    submission->failure_point.value_or(
+                        InsertionFailurePoint::NONE
+                    )
                 );
-            } else if (
-                command->order.type() == OrderType::MARKET
-            ) {
-                result = engine_.submit_market_order(
-                    command->order
+#endif
+
+                SubmissionResult result;
+
+                if (submission->order.type() ==
+                    OrderType::LIMIT) {
+
+                    result = engine_.submit_limit_order(
+                        submission->order
+                    );
+
+                } else if (
+                    submission->order.type() ==
+                    OrderType::MARKET
+                ) {
+
+                    result = engine_.submit_market_order(
+                        submission->order
+                    );
+
+                } else {
+
+                    result = {
+                        SubmissionStatus::INVALID_ORDER,
+                        0,
+                        submission->order.remaining_quantity()
+                    };
+                }
+
+                submission->result_promise.set_value(
+                    result
                 );
-            } else {
-                result = {
-                    SubmissionStatus::INVALID_ORDER,
-                    0,
-                    command->order.remaining_quantity()
-                };
+
+            } catch (...) {
+                submission->result_promise.set_exception(
+                    std::current_exception()
+                );
             }
 
-            command->result_promise.set_value(result);
+        } else if (auto* cancellation =
+                       std::get_if<CancelCommand>(&*command)) {
 
-        } catch (...) {
-            command->result_promise.set_exception(
-                std::current_exception()
-            );
+            try {
+                const bool cancelled =
+                    engine_.cancel_order(
+                        cancellation->order_id
+                    );
+
+                cancellation->result_promise.set_value(
+                    cancelled
+                );
+
+            } catch (...) {
+                cancellation->result_promise.set_exception(
+                    std::current_exception()
+                );
+            }
         }
     }
 }

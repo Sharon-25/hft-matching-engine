@@ -375,4 +375,8 @@ MarketOrderAccounting MatchingEngine::market_order_accounting(
     };
 }
 
+bool MatchingEngine::cancel_order(OrderId id) {
+    return book_.cancel_order(id);
+}
+
 } // namespace matching_engine

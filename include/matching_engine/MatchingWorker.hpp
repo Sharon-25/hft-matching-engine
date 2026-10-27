@@ -13,7 +13,7 @@ namespace matching_engine {
 class MatchingWorker {
 private:
     MatchingEngine engine_;
-    BoundedBlockingQueue<MatchingCommand> queue_;
+    BoundedBlockingQueue<WorkerCommand> queue_;
     std::jthread worker_;
 
     void run();
@@ -30,6 +30,7 @@ public:
     MatchingWorker& operator=(MatchingWorker&&) = delete;
 
     std::future<SubmissionResult> submit(Order order);
+    std::future<bool> cancel(OrderId id);
 
 #ifdef MATCHING_ENGINE_TESTING
     std::future<SubmissionResult> submit_with_failure_for_test(

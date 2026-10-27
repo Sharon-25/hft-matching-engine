@@ -55,6 +55,7 @@ public:
 
     SubmissionResult submit_limit_order(const Order& order);
     SubmissionResult submit_market_order(const Order& order);
+    bool cancel_order(OrderId id);
 
     MarketOrderAccounting market_order_accounting(
         const SubmissionResult& result
