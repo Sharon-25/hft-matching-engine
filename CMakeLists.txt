@@ -13,6 +13,7 @@ add_library(
     src/Order.cpp
     src/OrderBook.cpp
     src/MatchingEngine.cpp
+    src/MatchingWorker.cpp
 )
 
 target_include_directories(
@@ -76,6 +77,7 @@ if(BUILD_TESTING)
         src/Order.cpp
         src/OrderBook.cpp
         src/MatchingEngine.cpp
+        src/MatchingWorker.cpp
     )
 
     target_include_directories(
@@ -181,5 +183,37 @@ if(BUILD_TESTING)
     add_test(
         NAME BoundedBlockingQueueTests
         COMMAND bounded_blocking_queue_tests
+    )
+
+    add_executable(
+        matching_command_tests
+        tests/MatchingCommandTests.cpp
+    )
+
+    target_link_libraries(
+        matching_command_tests
+        PRIVATE
+        matching_core_testing
+    )
+
+    add_test(
+        NAME MatchingCommandTests
+        COMMAND matching_command_tests
+    )
+
+    add_executable(
+        matching_worker_tests
+        tests/MatchingWorkerTests.cpp
+    )
+
+    target_link_libraries(
+        matching_worker_tests
+        PRIVATE
+        matching_core_testing
+    )
+
+    add_test(
+        NAME MatchingWorkerTests
+        COMMAND matching_worker_tests
     )
 endif()
