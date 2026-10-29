@@ -6,7 +6,10 @@ The engine supports limit and market orders, price-time priority, partial and fu
 
 The project is developed using a **correctness-first, measurement-driven approach**, with particular attention to data structures, deterministic execution, memory management, exception safety, multithreading and automated verification.
 
-**Current status:** Core matching and concurrent command processing are implemented. Phase 7.6 shutdown, backpressure and failure-handling verification is complete. Further concurrent correctness and ordering verification is in progress. Latency benchmarking and performance optimization are planned.
+**Current status:** Phases 1–7 are complete, including core
+matching, deterministic differential verification, concurrent
+command processing, shutdown safety and concurrency audits.
+Phase 8 latency benchmarking and profiling is next.
 
 ## Key Features
 
@@ -32,7 +35,7 @@ Trades execute at the resting order's price.
 - Matching operations are serialized through the worker to avoid concurrent mutation of the order book.
 - Shutdown closes the queue, rejects further commands and drains previously accepted commands.
 
-Concurrent shutdown serialization, accepted-command draining, blocked-producer wake-up and exception recovery have been verified in Debug and Release builds. Further concurrency correctness, lifecycle and stress verification remains planned.
+Concurrent shutdown serialization, accepted-command draining, blocked-producer wake-up and exception recovery have been verified in Debug and Release builds. Deterministic and seeded stress testing confirmed FIFO ordering, price-time priority, quantity conservation and cancellation races across concurrent producers.
 
 ### Reliability and Correctness
 
@@ -66,6 +69,10 @@ Producer N ──┘             |
 Producers enqueue commands, while the dedicated worker executes them sequentially.
 
 This architecture separates concurrent request submission from order-book mutation, preserving a defined FIFO command-processing order without requiring multiple threads to modify the matching state simultaneously.
+
+For detailed thread-safety contracts, ordering guarantees,
+backpressure behavior, shutdown semantics and limitations,
+see [Concurrency Architecture](docs/CONCURRENCY_ARCHITECTURE.md).
 
 ### Core Components
 
@@ -186,7 +193,9 @@ Verification includes:
 
 The randomized matching suite includes five seeds with 1,000 operations per seed.
 
-Randomized cancellation coverage and additional concurrency-oriented verification remain future work.
+Additional randomized cancellation edge cases remain tracked
+follow-up work. Concurrent correctness, ordering and seeded
+stress verification were completed in Phase 7.7.
 
 ### Concurrent Worker Tests
 
@@ -206,7 +215,8 @@ Automated tests cover:
 - Blocked-producer wake-up on shutdown
 - Concurrent shutdown calls
 
-Shutdown and backpressure tests include deterministic synchronization, concurrent shutdown calls and repeated stress execution. Further work will address concurrent command correctness, ordering and remaining lifecycle limitations.
+Shutdown and backpressure tests include deterministic synchronization, concurrent shutdown calls, quantity conservation, price-time priority, ordering races and repeated seeded stress execution. Phase 7 concurrency implementation, correctness verification,
+lifecycle audits and documentation are complete.
 
 ### Build Configurations
 
@@ -285,6 +295,7 @@ hft-matching-engine/
 |   `-- BoundedBlockingQueueTests.cpp
 |
 |-- docs/
+|   |-- CONCURRENCY_ARCHITECTURE.md
 |   |-- ENGINEERING_BACKLOG.md
 |   |-- MARKET_ORDER_POLICY.md
 |   `-- VERIFICATION_LOG.md
@@ -301,20 +312,16 @@ hft-matching-engine/
 | 4 | Limit order matching and price-time priority | Completed |
 | 5 | Market order execution | Completed |
 | 6 | Correctness hardening, failure testing and differential verification | Completed, with documented follow-ups |
-| 7 | Concurrent command processing and worker lifecycle | In progress |
+| 7 | Concurrent command processing and worker lifecycle | Completed |
 | 8 | Latency and throughput benchmarking | Planned |
 | 9 | Profiling and measurement-driven optimization | Planned |
 
 ### Current Engineering Priorities
 
-1. Complete Phase 7.7 concurrent correctness and command-ordering verification.
-2. Expand deterministic concurrency stress tests and verify command-processing boundaries.
-3. Review object lifetime and exception-safety boundaries.
-4. Expand randomized cancellation and boundary verification.
-5. Define and implement a bounded trade-history or consumption policy.
-6. Establish reproducible latency and throughput benchmarks.
-7. Profile allocations, memory access and data-structure overhead.
-8. Optimize identified bottlenecks and compare results against the baseline.
+1. Define Phase 8 benchmark workloads and measurement methodology.
+2. Implement reproducible latency and throughput benchmarks.
+3. Profile allocation behavior and identify measured bottlenecks.
+4. Review remaining engineering limitations during Phase 9.
 
 Additional allocator-failure coverage and exception-safety verification remain tracked follow-up items.
 
@@ -355,6 +362,7 @@ The goal is to build a well-tested foundation, make engineering tradeoffs explic
 
 ## Documentation
 
+- [Concurrency Architecture](docs/CONCURRENCY_ARCHITECTURE.md) - Thread-safety contracts, ordering guarantees and concurrency design
 - [Engineering Backlog](docs/ENGINEERING_BACKLOG.md) - Development phases, remaining tasks and known limitations
 - [Market Order Policy](docs/MARKET_ORDER_POLICY.md) - Market order execution and admission behavior
 - [Verification Log](docs/VERIFICATION_LOG.md) - Test results and verification history
