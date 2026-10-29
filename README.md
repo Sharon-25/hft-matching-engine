@@ -1,4 +1,4 @@
-# C++ Low-Latency Order Matching Engine
+﻿# C++ Low-Latency Order Matching Engine
 
 A C++20 order matching engine built to explore the design and implementation of performance-sensitive trading infrastructure.
 
@@ -32,7 +32,7 @@ Trades execute at the resting order's price.
 - Matching operations are serialized through the worker to avoid concurrent mutation of the order book.
 - Shutdown closes the queue, rejects further commands and drains previously accepted commands.
 
-Concurrent shutdown behavior and worker lifecycle guarantees are undergoing further hardening and verification.
+Concurrent shutdown serialization, accepted-command draining, blocked-producer wake-up and exception recovery have been verified in Debug and Release builds. Further concurrency correctness, lifecycle and stress verification remains planned.
 
 ### Reliability and Correctness
 
@@ -227,7 +227,7 @@ Automated tests cover:
 - Backpressure and shutdown interaction
 - Completion of accepted-command futures during shutdown
 
-Further work is in progress to strengthen concurrent shutdown safety, scheduling-boundary tests and lifecycle guarantees.
+Shutdown and backpressure tests include deterministic synchronization, concurrent shutdown calls and repeated stress execution. Further work will address concurrent command correctness, ordering and remaining lifecycle limitations.
 
 ### Build Configurations
 
@@ -318,7 +318,7 @@ hft-matching-engine/
 
 | Phase | Focus | Status |
 |---|---|---|
-| 1–3 | Project setup, order model and order book | Completed |
+| 1ΓÇô3 | Project setup, order model and order book | Completed |
 | 4 | Limit order matching and price-time priority | Completed |
 | 5 | Market order execution | Completed |
 | 6 | Correctness hardening, failure testing and differential verification | Completed, with documented follow-ups |
@@ -376,12 +376,12 @@ The goal is to build a well-tested foundation, make engineering tradeoffs explic
 
 ## Documentation
 
-- [Engineering Backlog](docs/ENGINEERING_BACKLOG.md) — Development phases, remaining tasks and known limitations
-- [Market Order Policy](docs/MARKET_ORDER_POLICY.md) — Market order execution and admission behavior
-- [Verification Log](docs/VERIFICATION_LOG.md) — Test results and verification history
+- [Engineering Backlog](docs/ENGINEERING_BACKLOG.md) ΓÇö Development phases, remaining tasks and known limitations
+- [Market Order Policy](docs/MARKET_ORDER_POLICY.md) ΓÇö Market order execution and admission behavior
+- [Verification Log](docs/VERIFICATION_LOG.md) ΓÇö Test results and verification history
 
 ## Development Philosophy
 
-**Correctness → Deterministic Verification → Concurrency Safety → Benchmarking → Profiling → Optimization**
+**Correctness ΓåÆ Deterministic Verification ΓåÆ Concurrency Safety ΓåÆ Benchmarking ΓåÆ Profiling ΓåÆ Optimization**
 
 The project emphasizes understanding the underlying C++ and data-structure decisions, validating behavior through automated tests and making performance claims only when supported by measurements.
