@@ -378,18 +378,30 @@
 
 ### Phase 7.7 — Concurrent correctness and ordering
 
-- [ ] P7-42: Expand multi-producer correctness tests.
+- [x] P7-42: Expand multi-producer correctness tests.
       Include mixed LIMIT, MARKET and CANCEL commands.
-- [ ] P7-43: Verify matching invariants under concurrent input.
-      Confirm price-time priority, quantity conservation,
+      Added four-producer mixed-command test with independent
+      workloads and deterministic result expectations.
+      Debug: 6/6 passed.
+      Release: 6/6 passed.
+      Repeated Debug worker verification: 20/20 passed.
+- [x] P7-43: Verify matching invariants under concurrent input.
+      Added worker-level tests for quantity conservation,
+      same-price FIFO, different-price priority,
       active-order consistency and historical ID uniqueness.
-- [ ] P7-44: Verify ordering-sensitive cancellation races.
-      Test submit-before-cancel, cancel-before-submit
+      Reused existing partial-fill and engine invariant tests.
+      Debug and Release: 6/6 tests passed.
+- [x] P7-44: Verify ordering-sensitive cancellation races.
+      Covered submit-before-cancel, cancel-before-submit
       and crossing-order interactions using explicitly
-      established queue insertion order.
-- [ ] P7-45: Add reproducible concurrent stress tests.
-      Record seeds and relevant execution conditions
-      for reproducibility where applicable.
+      established FIFO queue insertion order.
+      Debug and Release: 6/6 tests passed.
+- [x] P7-45: Add reproducible concurrent stress tests.
+      Added five fixed seeds with four concurrent producers
+      and 400 commands per seed. Recorded seed, producer,
+      operation and queue configuration for diagnostics.
+      Debug and Release: 6/6 tests passed.
+      Repeated worker tests: 20/20 per configuration.
 - [ ] P7-46: Complete Phase 7.7 regression verification
       and commit.
 
