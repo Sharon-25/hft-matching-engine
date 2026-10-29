@@ -1,4 +1,4 @@
-﻿# C++ Low-Latency Order Matching Engine
+# C++ Low-Latency Order Matching Engine
 
 A C++20 order matching engine built to explore the design and implementation of performance-sensitive trading infrastructure.
 
@@ -6,7 +6,7 @@ The engine supports limit and market orders, price-time priority, partial and fu
 
 The project is developed using a **correctness-first, measurement-driven approach**, with particular attention to data structures, deterministic execution, memory management, exception safety, multithreading and automated verification.
 
-**Current status:** Core matching and concurrent command processing are implemented. Worker lifecycle hardening and concurrency verification are in progress. Latency benchmarking and performance optimization are planned.
+**Current status:** Core matching and concurrent command processing are implemented. Phase 7.6 shutdown, backpressure and failure-handling verification is complete. Further concurrent correctness and ordering verification is in progress. Latency benchmarking and performance optimization are planned.
 
 ## Key Features
 
@@ -27,7 +27,7 @@ Trades execute at the resting order's price.
 
 - Multiple producer threads can submit orders and cancellation requests.
 - A dedicated worker thread processes matching commands.
-- A bounded blocking queue provides FIFO command admission and backpressure.
+- A bounded blocking queue provides FIFO ordering of accepted commands and backpressure.
 - `std::future` and `std::promise` communicate results and exceptions to callers.
 - Matching operations are serialized through the worker to avoid concurrent mutation of the order book.
 - Shutdown closes the queue, rejects further commands and drains previously accepted commands.
@@ -50,40 +50,17 @@ Concurrent shutdown serialization, accepted-command draining, blocked-producer w
 The engine follows a multiple-producer, single-matching-worker design.
 
 ```text
-                  Producer Thread 1
-                          |
-                  Producer Thread 2
-                          |
-                  Producer Thread N
-                          |
-                          v
-              +------------------------+
-              | Bounded Blocking Queue |
-              |    FIFO Commands       |
-              +------------------------+
-                          |
-                          v
-              +------------------------+
-              |    Matching Worker     |
-              |  Dedicated C++ Thread  |
-              +------------------------+
-                          |
-                          v
-              +------------------------+
-              |    Matching Engine     |
-              | Order Admission        |
-              | Matching & Execution   |
-              | Cancellation           |
-              | Trade Recording        |
-              +------------------------+
-                          |
-                          v
-              +------------------------+
-              |       Order Book       |
-              | Bids / Asks            |
-              | Price-Time Priority    |
-              | Active Order Index     |
-              +------------------------+
+Producer 1 ──┐
+Producer 2 ──┼──> Bounded FIFO Queue
+Producer N ──┘             |
+                           v
+                    Matching Worker
+                           |
+                           v
+                    Matching Engine
+                           |
+                           v
+                       Order Book
 ```
 
 Producers enqueue commands, while the dedicated worker executes them sequentially.
@@ -97,7 +74,7 @@ This architecture separates concurrent request submission from order-book mutati
 | `Order` | Order attributes, validation, remaining quantity and lifecycle |
 | `OrderBook` | Bid/ask price levels, FIFO order storage, active-order lookup and cancellation |
 | `MatchingEngine` | Order admission, matching, trade execution and ID management |
-| `MatchingCommand` | Submission and cancellation command representation with result promises |
+| `MatchingCommand` / `CancelCommand` | Order submission and cancellation requests with corresponding result promises |
 | `BoundedBlockingQueue` | Thread-safe bounded FIFO queue with blocking producers and shutdown support |
 | `MatchingWorker` | Dedicated worker thread, command dispatch and result delivery |
 
@@ -124,7 +101,7 @@ Each price level stores orders in arrival order. An index from order IDs to list
 | Active order ID lookup | Average O(1) |
 | Best bid/ask access | O(1) when the corresponding side is nonempty |
 | Insert into an existing price level | O(1) for list insertion, excluding auxiliary index operations |
-| Create or locate a price level | O(log P) |
+| Create or locate a price level | O(log(P + 1)) |
 | Cancel an active order | Average O(1) lookup, with up to O(log P) price-level removal |
 | Match an incoming order | Depends on the number of executions and price levels traversed |
 
@@ -226,6 +203,8 @@ Automated tests cover:
 - Draining accepted submissions and cancellations
 - Backpressure and shutdown interaction
 - Completion of accepted-command futures during shutdown
+- Blocked-producer wake-up on shutdown
+- Concurrent shutdown calls
 
 Shutdown and backpressure tests include deterministic synchronization, concurrent shutdown calls and repeated stress execution. Further work will address concurrent command correctness, ordering and remaining lifecycle limitations.
 
@@ -318,7 +297,7 @@ hft-matching-engine/
 
 | Phase | Focus | Status |
 |---|---|---|
-| 1ΓÇô3 | Project setup, order model and order book | Completed |
+| 1-3 | Project setup, order model and order book | Completed |
 | 4 | Limit order matching and price-time priority | Completed |
 | 5 | Market order execution | Completed |
 | 6 | Correctness hardening, failure testing and differential verification | Completed, with documented follow-ups |
@@ -328,8 +307,8 @@ hft-matching-engine/
 
 ### Current Engineering Priorities
 
-1. Complete concurrent shutdown and worker lifecycle hardening.
-2. Strengthen concurrent ordering, cancellation and stress tests.
+1. Complete Phase 7.7 concurrent correctness and command-ordering verification.
+2. Expand deterministic concurrency stress tests and verify command-processing boundaries.
 3. Review object lifetime and exception-safety boundaries.
 4. Expand randomized cancellation and boundary verification.
 5. Define and implement a bounded trade-history or consumption policy.
@@ -376,12 +355,12 @@ The goal is to build a well-tested foundation, make engineering tradeoffs explic
 
 ## Documentation
 
-- [Engineering Backlog](docs/ENGINEERING_BACKLOG.md) ΓÇö Development phases, remaining tasks and known limitations
-- [Market Order Policy](docs/MARKET_ORDER_POLICY.md) ΓÇö Market order execution and admission behavior
-- [Verification Log](docs/VERIFICATION_LOG.md) ΓÇö Test results and verification history
+- [Engineering Backlog](docs/ENGINEERING_BACKLOG.md) - Development phases, remaining tasks and known limitations
+- [Market Order Policy](docs/MARKET_ORDER_POLICY.md) - Market order execution and admission behavior
+- [Verification Log](docs/VERIFICATION_LOG.md) - Test results and verification history
 
 ## Development Philosophy
 
-**Correctness ΓåÆ Deterministic Verification ΓåÆ Concurrency Safety ΓåÆ Benchmarking ΓåÆ Profiling ΓåÆ Optimization**
+**Correctness -> Deterministic Verification -> Concurrency Safety -> Benchmarking -> Profiling -> Optimization**
 
 The project emphasizes understanding the underlying C++ and data-structure decisions, validating behavior through automated tests and making performance claims only when supported by measurements.

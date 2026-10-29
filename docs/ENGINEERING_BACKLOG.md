@@ -369,12 +369,12 @@
       Prefer explicit synchronization over arbitrary
       sleep-based timing assumptions.
       Avoid introducing flaky scheduling-dependent tests.
-- [ ] P7-41: Complete Debug/Release verification,
+- [x] P7-41: Complete Debug/Release verification,
       document shutdown guarantees and commit Phase 7.6.
       Debug and Release each passed all six CTest suites.
       Shutdown guarantees and thread-safety lifetime contract
       documented in MatchingWorker.hpp.
-      Commit is pending.
+      Commit hash: 9d4ee9b
 
 ### Phase 7.7 — Concurrent correctness and ordering
 
