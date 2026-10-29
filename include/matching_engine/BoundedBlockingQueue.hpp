@@ -29,6 +29,11 @@ private:
 
     bool closed_ = false;
 
+#ifdef MATCHING_ENGINE_TESTING
+    std::condition_variable test_waiting_cv_;
+    std::size_t test_waiting_producers_ = 0;
+#endif
+
 public:
     explicit BoundedBlockingQueue(std::size_t capacity)
         : capacity_(capacity) {
@@ -47,9 +52,26 @@ public:
     bool push(T item) {
         std::unique_lock<std::mutex> lock(mutex_);
 
+#ifdef MATCHING_ENGINE_TESTING
+        if (!closed_ && queue_.size() >= capacity_) {
+            ++test_waiting_producers_;
+            test_waiting_cv_.notify_all();
+
+            not_full_.wait(lock, [this] {
+                return closed_ || queue_.size() < capacity_;
+            });
+
+            --test_waiting_producers_;
+        } else {
+            not_full_.wait(lock, [this] {
+                return closed_ || queue_.size() < capacity_;
+            });
+        }
+#else
         not_full_.wait(lock, [this] {
             return closed_ || queue_.size() < capacity_;
         });
+#endif
 
         if (closed_) {
             return false;
@@ -62,6 +84,18 @@ public:
 
         return true;
     }
+
+#ifdef MATCHING_ENGINE_TESTING
+    void wait_for_blocked_producers_for_test(
+        std::size_t expected_count
+    ) {
+        std::unique_lock<std::mutex> lock(mutex_);
+
+        test_waiting_cv_.wait(lock, [this, expected_count] {
+            return test_waiting_producers_ >= expected_count;
+        });
+    }
+#endif
 
     std::optional<T> pop() {
         std::unique_lock<std::mutex> lock(mutex_);

@@ -176,28 +176,28 @@ void test_close_wakes_blocked_producer() {
 
     CHECK(queue.push(10));
 
-    std::promise<void> producer_started;
-    auto started = producer_started.get_future();
-
     std::promise<bool> producer_result;
     auto result = producer_result.get_future();
 
     std::thread producer([&] {
-        producer_started.set_value();
         producer_result.set_value(queue.push(20));
     });
 
-    started.wait();
+#ifdef MATCHING_ENGINE_TESTING
+    queue.wait_for_blocked_producers_for_test(1);
+#endif
 
     queue.close();
 
     CHECK(result.wait_for(std::chrono::seconds(5)) ==
           std::future_status::ready);
+
     CHECK(!result.get());
 
     producer.join();
 
     auto remaining = queue.pop();
+
     CHECK(remaining.has_value());
     CHECK(*remaining == 10);
     CHECK(!queue.pop().has_value());

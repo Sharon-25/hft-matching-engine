@@ -86,8 +86,65 @@ MatchingWorker::submit_with_failure_for_test(
 
 #endif
 
+#ifdef MATCHING_ENGINE_TESTING
+
+void MatchingWorker::pause_before_next_command_for_test() {
+    std::lock_guard<std::mutex> lock(test_gate_mutex_);
+
+    test_pause_requested_ = true;
+    test_worker_paused_ = false;
+    test_resume_requested_ = false;
+}
+
+void MatchingWorker::wait_until_paused_for_test() {
+    std::unique_lock<std::mutex> lock(test_gate_mutex_);
+
+    test_gate_cv_.wait(lock, [this] {
+        return test_worker_paused_;
+    });
+}
+
+void MatchingWorker::resume_for_test() {
+    {
+        std::lock_guard<std::mutex> lock(test_gate_mutex_);
+        test_resume_requested_ = true;
+    }
+
+    test_gate_cv_.notify_all();
+}
+
+void MatchingWorker::wait_at_test_gate() {
+    std::unique_lock<std::mutex> lock(test_gate_mutex_);
+
+    if (!test_pause_requested_) {
+        return;
+    }
+
+    test_worker_paused_ = true;
+    test_gate_cv_.notify_all();
+
+    test_gate_cv_.wait(lock, [this] {
+        return test_resume_requested_;
+    });
+
+    test_pause_requested_ = false;
+    test_worker_paused_ = false;
+    test_resume_requested_ = false;
+}
+
+void MatchingWorker::wait_for_blocked_producers_for_test(
+    std::size_t expected_count
+) {
+    queue_.wait_for_blocked_producers_for_test(expected_count);
+}
+
+#endif
+
 void MatchingWorker::run() {
     while (auto command = queue_.pop()) {
+#ifdef MATCHING_ENGINE_TESTING
+        wait_at_test_gate();
+#endif
 
         if (auto* submission =
                 std::get_if<MatchingCommand>(&*command)) {
@@ -161,7 +218,13 @@ void MatchingWorker::run() {
 }
 
 void MatchingWorker::shutdown() noexcept {
+    std::lock_guard<std::mutex> lock(shutdown_mutex_);
+
     queue_.close();
+
+#ifdef MATCHING_ENGINE_TESTING
+    resume_for_test();
+#endif
 
     if (worker_.joinable()) {
         worker_.join();

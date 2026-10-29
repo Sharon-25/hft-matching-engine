@@ -1,4 +1,5 @@
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <future>
@@ -209,6 +210,20 @@ void test_matching_exception_reaches_future_and_worker_recovers() {
         InsertionFailurePoint::AFTER_LIST_INSERT
     );
 
+    // Queue a valid command without waiting for the failed one.
+    auto recovery = worker.submit(
+        Order(8002, Side::BUY, 10100, 5)
+    );
+
+    // Both accepted commands must reach a terminal future state.
+    worker.shutdown();
+
+    CHECK(failing.wait_for(std::chrono::seconds(5)) ==
+          std::future_status::ready);
+
+    CHECK(recovery.wait_for(std::chrono::seconds(5)) ==
+          std::future_status::ready);
+
     bool caught_bad_alloc = false;
 
     try {
@@ -219,19 +234,12 @@ void test_matching_exception_reaches_future_and_worker_recovers() {
 
     CHECK(caught_bad_alloc);
 
-    // The worker must remain alive after the exception.
-    auto recovery = worker.submit(
-        Order(8002, Side::BUY, 10100, 5)
-    );
-
     const auto result = recovery.get();
 
     CHECK(result.status ==
           SubmissionStatus::ACCEPTED);
     CHECK(result.executed_quantity == 0);
     CHECK(result.remaining_quantity == 5);
-
-    worker.shutdown();
 }
 
 #endif
@@ -686,6 +694,243 @@ void test_cancellation_drains_during_shutdown() {
     CHECK(rejected);
 }
 
+#ifdef MATCHING_ENGINE_TESTING
+
+void test_blocked_submission_wakes_on_shutdown() {
+    MatchingWorker worker(1);
+
+    worker.pause_before_next_command_for_test();
+
+    // The worker removes this command and pauses.
+    auto first = worker.submit(
+        Order(56001, Side::BUY, 10000, 1)
+    );
+
+    worker.wait_until_paused_for_test();
+
+    // The queue has capacity 1, so this fills it.
+    auto second = worker.submit(
+        Order(56002, Side::BUY, 10000, 1)
+    );
+
+    std::promise<void> producer_started;
+    auto started = producer_started.get_future();
+
+    std::promise<bool> producer_rejected;
+    auto rejected = producer_rejected.get_future();
+
+    std::thread producer([&] {
+        producer_started.set_value();
+
+        bool caught = false;
+
+        try {
+            auto future = worker.submit(
+                Order(56003, Side::BUY, 10000, 1)
+            );
+            (void)future;
+        } catch (const std::runtime_error&) {
+            caught = true;
+        }
+
+        producer_rejected.set_value(caught);
+    });
+
+    started.wait();
+
+    worker.wait_for_blocked_producers_for_test(1);
+
+    // Shutdown closes the queue, waking the producer.
+    worker.shutdown();
+
+    CHECK(
+        rejected.wait_for(std::chrono::seconds(5)) ==
+        std::future_status::ready
+    );
+
+    CHECK(rejected.get());
+
+    producer.join();
+
+    // Both previously accepted commands must complete.
+    CHECK(first.get().status == SubmissionStatus::ACCEPTED);
+    CHECK(second.get().status == SubmissionStatus::ACCEPTED);
+}
+
+void test_blocked_cancellation_wakes_on_shutdown() {
+    MatchingWorker worker(1);
+
+    worker.pause_before_next_command_for_test();
+
+    auto first = worker.submit(
+        Order(57001, Side::SELL, 10500, 10)
+    );
+
+    worker.wait_until_paused_for_test();
+
+    // Fill the queue with an accepted cancellation.
+    auto accepted_cancel = worker.cancel(57001);
+
+    std::promise<void> producer_started;
+    auto started = producer_started.get_future();
+
+    std::promise<bool> producer_rejected;
+    auto rejected = producer_rejected.get_future();
+
+    std::thread producer([&] {
+        producer_started.set_value();
+
+        bool caught = false;
+
+        try {
+            auto future = worker.cancel(57001);
+            (void)future;
+        } catch (const std::runtime_error&) {
+            caught = true;
+        }
+
+        producer_rejected.set_value(caught);
+    });
+
+    started.wait();
+
+    worker.wait_for_blocked_producers_for_test(1);
+
+    worker.shutdown();
+
+    CHECK(
+        rejected.wait_for(std::chrono::seconds(5)) ==
+        std::future_status::ready
+    );
+
+    CHECK(rejected.get());
+
+    producer.join();
+
+    CHECK(first.get().status == SubmissionStatus::ACCEPTED);
+    CHECK(accepted_cancel.get());
+}
+
+void test_shutdown_drains_mixed_accepted_commands() {
+    MatchingWorker worker(3);
+
+    worker.pause_before_next_command_for_test();
+
+    // First command is removed from the queue and paused.
+    auto resting = worker.submit(
+        Order(58001, Side::SELL, 10500, 10)
+    );
+
+    worker.wait_until_paused_for_test();
+
+    // These three commands fill the queue.
+    auto crossing = worker.submit(
+        Order(58002, Side::BUY, 10500, 4)
+    );
+
+    auto cancellation = worker.cancel(58001);
+
+    auto later_buy = worker.submit(
+        Order(58003, Side::BUY, 10500, 6)
+    );
+
+    // Shutdown must process all four accepted commands.
+    worker.shutdown();
+
+    CHECK(resting.wait_for(std::chrono::seconds(5)) ==
+          std::future_status::ready);
+
+    CHECK(crossing.wait_for(std::chrono::seconds(5)) ==
+          std::future_status::ready);
+
+    CHECK(cancellation.wait_for(std::chrono::seconds(5)) ==
+          std::future_status::ready);
+
+    CHECK(later_buy.wait_for(std::chrono::seconds(5)) ==
+          std::future_status::ready);
+
+    const auto resting_result = resting.get();
+    const auto crossing_result = crossing.get();
+    const bool cancelled = cancellation.get();
+    const auto later_result = later_buy.get();
+
+    CHECK(resting_result.status ==
+          SubmissionStatus::ACCEPTED);
+
+    CHECK(crossing_result.status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(crossing_result.executed_quantity == 4);
+    CHECK(crossing_result.remaining_quantity == 0);
+
+    CHECK(cancelled);
+
+    CHECK(later_result.status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(later_result.executed_quantity == 0);
+    CHECK(later_result.remaining_quantity == 6);
+}
+
+#endif
+
+void test_concurrent_shutdown_calls() {
+    MatchingWorker worker(8);
+
+    auto first = worker.submit(
+        Order(59001, Side::SELL, 10500, 10)
+    );
+
+    auto second = worker.submit(
+        Order(59002, Side::BUY, 10500, 4)
+    );
+
+    constexpr int shutdown_callers = 4;
+
+    std::atomic<int> ready_count{0};
+    std::atomic<bool> start{false};
+
+    std::vector<std::thread> callers;
+
+    for (int i = 0; i < shutdown_callers; ++i) {
+        callers.emplace_back([&] {
+            ready_count.fetch_add(
+                1, std::memory_order_release
+            );
+
+            while (!start.load(
+                std::memory_order_acquire
+            )) {
+                std::this_thread::yield();
+            }
+
+            worker.shutdown();
+        });
+    }
+
+    while (ready_count.load(
+        std::memory_order_acquire
+    ) != shutdown_callers) {
+        std::this_thread::yield();
+    }
+
+    start.store(true, std::memory_order_release);
+
+    for (auto& caller : callers) {
+        caller.join();
+    }
+
+    CHECK(first.get().status ==
+          SubmissionStatus::ACCEPTED);
+
+    const auto second_result = second.get();
+
+    CHECK(second_result.status ==
+          SubmissionStatus::ACCEPTED);
+    CHECK(second_result.executed_quantity == 4);
+
+    // Repeated shutdown must remain safe.
+    worker.shutdown();
+}
+
 int main() {
     test_limit_orders_through_worker();
     test_market_orders_through_worker();
@@ -704,9 +949,13 @@ int main() {
     test_cancel_partially_filled_order();
     test_cancelled_order_id_cannot_be_reused();
     test_cancellation_drains_during_shutdown();
+    test_concurrent_shutdown_calls();
 
 #ifdef MATCHING_ENGINE_TESTING
     test_matching_exception_reaches_future_and_worker_recovers();
+    test_blocked_submission_wakes_on_shutdown();
+    test_blocked_cancellation_wakes_on_shutdown();
+    test_shutdown_drains_mixed_accepted_commands();
 #endif
 
     std::printf("MatchingWorker tests passed\n");

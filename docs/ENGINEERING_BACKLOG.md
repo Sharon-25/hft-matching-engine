@@ -327,51 +327,54 @@
       Release total test time: 2.33 seconds.
       git diff --check reported no whitespace errors.
       LF/CRLF conversion warnings were observed on Windows.
-- [ ] P7-33: Commit Phase 7.5 cancellation implementation.
+- [x] P7-33: Commit Phase 7.5 cancellation implementation.
       Stage MatchingCommand.hpp, MatchingEngine.hpp,
       MatchingWorker.hpp, MatchingEngine.cpp,
       MatchingWorker.cpp, MatchingWorkerTests.cpp
       and the updated engineering backlog.
-      Commit message:
-      Add FIFO-ordered cancellation through matching worker
-      Record the resulting commit hash after committing.
+      Commit message: Add FIFO-ordered cancellation through matching worker
+      Commit hash: 2e4c906
 
 ### Phase 7.6 — Shutdown, backpressure and failure handling
 
-- [ ] P7-34: Review shutdown and backpressure contracts.
+- [x] P7-34: Review shutdown and backpressure contracts.
       Inspect the current queue and worker implementations.
       Identify guarantees already covered by queue-level
       tests and those requiring worker-level verification.
-- [ ] P7-35: Verify blocked producers during shutdown.
+- [x] P7-35: Verify blocked producers during shutdown.
       Ensure producers waiting for queue capacity wake
       when the queue closes.
       Verify rejected commands cannot remain blocked
       indefinitely.
-- [ ] P7-36: Verify draining of all accepted commands.
+- [x] P7-36: Verify draining of all accepted commands.
       Accepted submissions and cancellations must
       complete before shutdown returns.
       Verify their futures become ready with either
       a result or an exception.
-- [ ] P7-37: Verify concurrent shutdown boundaries.
+- [x] P7-37: Verify concurrent shutdown boundaries.
       Test submissions and cancellations racing with
       shutdown.
       Verify that accepted commands are processed
       and rejected commands report failure correctly.
-- [ ] P7-38: Verify repeated shutdown behavior.
+- [x] P7-38: Verify repeated shutdown behavior.
       Confirm shutdown is safe when invoked repeatedly
       in supported usage scenarios.
       Review concurrent shutdown calls separately
       before claiming thread-safe shutdown invocation.
-- [ ] P7-39: Verify exception recovery.
+- [x] P7-39: Verify exception recovery.
       Test failure propagation through futures.
       Confirm subsequent commands can continue
       processing after recoverable failures.
-- [ ] P7-40: Add deterministic lifecycle and backpressure tests.
+- [x] P7-40: Add deterministic lifecycle and backpressure tests.
       Prefer explicit synchronization over arbitrary
       sleep-based timing assumptions.
       Avoid introducing flaky scheduling-dependent tests.
 - [ ] P7-41: Complete Debug/Release verification,
       document shutdown guarantees and commit Phase 7.6.
+      Debug and Release each passed all six CTest suites.
+      Shutdown guarantees and thread-safety lifetime contract
+      documented in MatchingWorker.hpp.
+      Commit is pending.
 
 ### Phase 7.7 — Concurrent correctness and ordering
 
@@ -562,5 +565,3 @@
   suites in both Debug and Release.
   These results establish tested functional behavior,
   not exhaustive concurrency or exception safety.
-- Phase 7.5 cancellation changes have passed verification
-  but are awaiting their Git commit.
