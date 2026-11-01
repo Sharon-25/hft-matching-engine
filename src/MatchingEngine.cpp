@@ -1,6 +1,7 @@
 #include "matching_engine/MatchingEngine.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <limits>
 #include <stdexcept>
 #include <unordered_set>
@@ -233,12 +234,27 @@ SubmissionResult MatchingEngine::submit_market_order(
             ? std::numeric_limits<Price>::max()
             : Price{0};
 
+#ifdef MATCHING_ENGINE_PROFILING
+    const auto preflight_start =
+        std::chrono::steady_clock::now();
+#endif
+
     const std::size_t expected_trades =
         book_.count_matchable_orders(
             order.side(),
             crossing_bound,
             order.remaining_quantity()
         );
+
+#ifdef MATCHING_ENGINE_PROFILING
+    const auto preflight_end =
+        std::chrono::steady_clock::now();
+
+    market_profiling_stats_.preflight_ns +=
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            preflight_end - preflight_start
+        ).count();
+#endif
 
     if (expected_trades > book_.order_count()) {
         throw std::logic_error(
@@ -264,7 +280,44 @@ SubmissionResult MatchingEngine::submit_market_order(
     }
 #endif
 
+#ifdef MATCHING_ENGINE_PROFILING
+    const auto reservation_start =
+        std::chrono::steady_clock::now();
+#endif
+
+#ifdef MATCHING_ENGINE_PROFILING
+    if (geometric_trade_growth_for_profiling_ &&
+        required_trade_capacity > trades_.capacity()) {
+
+        const std::size_t current_capacity = trades_.capacity();
+        const std::size_t max_capacity = trades_.max_size();
+
+        const std::size_t doubled_capacity =
+            current_capacity > max_capacity / 2
+                ? max_capacity
+                : std::max<std::size_t>(
+                      1, current_capacity * 2
+                  );
+
+        trades_.reserve(
+            std::max(required_trade_capacity, doubled_capacity)
+        );
+    } else {
+        trades_.reserve(required_trade_capacity);
+    }
+#else
     trades_.reserve(required_trade_capacity);
+#endif
+
+#ifdef MATCHING_ENGINE_PROFILING
+    const auto reservation_end =
+        std::chrono::steady_clock::now();
+
+    market_profiling_stats_.reservation_ns +=
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            reservation_end - reservation_start
+        ).count();
+#endif
 
     // 6. Execute directly against the resting book.
     // The incoming market order is never inserted.
@@ -279,6 +332,11 @@ SubmissionResult MatchingEngine::submit_market_order(
 
     const std::size_t trades_before =
         trades_.size();
+
+#ifdef MATCHING_ENGINE_PROFILING
+    const auto execution_start =
+        std::chrono::steady_clock::now();
+#endif
 
     while (remaining_quantity > 0) {
         const Order* resting =
@@ -323,6 +381,18 @@ SubmissionResult MatchingEngine::submit_market_order(
         remaining_quantity -= executable;
     }
 
+#ifdef MATCHING_ENGINE_PROFILING
+    const auto execution_end =
+        std::chrono::steady_clock::now();
+
+    market_profiling_stats_.execution_ns +=
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            execution_end - execution_start
+        ).count();
+
+    ++market_profiling_stats_.submissions;
+#endif
+
     // 7. Verify preflight trade accounting.
     if (trades_.size() - trades_before !=
         expected_trades) {
@@ -365,6 +435,23 @@ const OrderBook& MatchingEngine::order_book() const {
 const std::vector<Trade>& MatchingEngine::trades() const noexcept {
     return trades_;
 }
+
+#ifdef MATCHING_ENGINE_PROFILING
+void MatchingEngine::reserve_trade_capacity_for_profiling(
+    std::size_t capacity
+) {
+    trades_.reserve(capacity);
+}
+
+void MatchingEngine::enable_geometric_trade_growth_for_profiling() noexcept {
+    geometric_trade_growth_for_profiling_ = true;
+}
+
+const MarketProfilingStats&
+MatchingEngine::market_profiling_stats() const noexcept {
+    return market_profiling_stats_;
+}
+#endif
 
 MarketOrderAccounting MatchingEngine::market_order_accounting(
     const SubmissionResult& result

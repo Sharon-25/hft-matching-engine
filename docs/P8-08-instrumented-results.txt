@@ -1,0 +1,727 @@
+=== Low-Latency Matching Engine Benchmarks (INSTRUMENTED QUEUE BUILD) ===
+[INSTRUMENTATION ACTIVE: Queue wait time and backpressure metrics enabled]
+[NOTE: Throughput and latency in this executable include queue instrumentation overhead;]
+[do NOT compare directly against the uninstrumented production throughput baseline.]
+
+Clock steady: true
+Timer baseline
+  Min: 0 ns
+  p50: 100 ns
+  p95: 100 ns
+  p99: 100 ns
+  Max: 6700 ns
+
+B1 - Non-crossing LIMIT insertion
+  Min: 600 ns
+  p50: 700 ns
+  p95: 800 ns
+  p99: 800 ns
+  Max: 6800 ns
+
+B2 - Crossing LIMIT execution
+  Min: 1400 ns
+  p50: 1400 ns
+  p95: 1500 ns
+  p99: 2000 ns
+  Max: 30100 ns
+
+B3 - MARKET execution
+  Min: 600 ns
+  p50: 700 ns
+  p95: 700 ns
+  p99: 700 ns
+  Max: 6700 ns
+
+B4 - Order cancellation
+  Min: 200 ns
+  p50: 300 ns
+  p95: 300 ns
+  p99: 400 ns
+  Max: 52600 ns
+
+=== P8-06 Concurrent Producer Throughput and Backpressure (INSTRUMENTED) ===
+
+P8-06 (Instrumented) - 1 producer, queue capacity 64
+  Producers: 1, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 669039 ops/sec (14 ms) [Blocked: 0/10000 (0%)]
+    Run 2: 545119 ops/sec (18 ms) [Blocked: 0/10000 (0%)]
+    Run 3: 764830 ops/sec (13 ms) [Blocked: 0/10000 (0%)]
+    Run 4: 713348 ops/sec (14 ms) [Blocked: 0/10000 (0%)]
+    Run 5: 567559 ops/sec (17 ms) [Blocked: 0/10000 (0%)]
+  Throughput (ops/sec):
+    Min:    545119
+    Median: 669039
+    Max:    764830
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 500 ns
+    p95: 1200 ns
+    p99: 2300 ns
+    Max: 25400 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 5600 ns
+    p50: 17700 ns
+    p95: 49300 ns
+    p99: 157200 ns
+    Max: 728500 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 50000
+    Blocked submissions: 0 (0%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 0 ms
+    Wait duration percentiles: N/A (no blocked submissions)
+
+P8-06 (Instrumented) - 2 producers, queue capacity 64
+  Producers: 2, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 651915 ops/sec (15 ms) [Blocked: 0/10000 (0%)]
+    Run 2: 631903 ops/sec (15 ms) [Blocked: 0/10000 (0%)]
+    Run 3: 618218 ops/sec (16 ms) [Blocked: 0/10000 (0%)]
+    Run 4: 609202 ops/sec (16 ms) [Blocked: 0/10000 (0%)]
+    Run 5: 629314 ops/sec (15 ms) [Blocked: 0/10000 (0%)]
+  Throughput (ops/sec):
+    Min:    609202
+    Median: 629314
+    Max:    651915
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 500 ns
+    p95: 1600 ns
+    p99: 3900 ns
+    Max: 85000 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 3000 ns
+    p50: 56200 ns
+    p95: 104400 ns
+    p99: 337600 ns
+    Max: 879300 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 50000
+    Blocked submissions: 0 (0%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 0 ms
+    Wait duration percentiles: N/A (no blocked submissions)
+
+P8-06 (Instrumented) - 4 producers, queue capacity 64
+  Producers: 4, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 302540 ops/sec (33 ms) [Blocked: 4435/10000 (44.35%)]
+    Run 2: 308925 ops/sec (32 ms) [Blocked: 4146/10000 (41.46%)]
+    Run 3: 337320 ops/sec (29 ms) [Blocked: 4204/10000 (42.04%)]
+    Run 4: 308127 ops/sec (32 ms) [Blocked: 4369/10000 (43.69%)]
+    Run 5: 286597 ops/sec (34 ms) [Blocked: 4348/10000 (43.48%)]
+  Throughput (ops/sec):
+    Min:    286597
+    Median: 308127
+    Max:    337320
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 1900 ns
+    p95: 28500 ns
+    p99: 54600 ns
+    Max: 936300 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 3400 ns
+    p50: 202400 ns
+    p95: 334100 ns
+    p99: 595000 ns
+    Max: 1334100 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 50000
+    Blocked submissions: 21502 (43.004%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 243.077 ms
+    Wait duration percentiles (when blocked):
+      Min: 400 ns
+      p50: 5000 ns
+      p95: 36100 ns
+      p99: 67400 ns
+      Max: 934800 ns
+
+P8-06 (Instrumented) - 4 producers, queue capacity 8
+  Producers: 4, Queue capacity: 8, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 241624 ops/sec (41 ms) [Blocked: 4853/10000 (48.53%)]
+    Run 2: 271910 ops/sec (36 ms) [Blocked: 4858/10000 (48.58%)]
+    Run 3: 249083 ops/sec (40 ms) [Blocked: 4955/10000 (49.55%)]
+    Run 4: 234414 ops/sec (42 ms) [Blocked: 5203/10000 (52.03%)]
+    Run 5: 234952 ops/sec (42 ms) [Blocked: 4980/10000 (49.8%)]
+  Throughput (ops/sec):
+    Min:    234414
+    Median: 241624
+    Max:    271910
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 4400 ns
+    p95: 57500 ns
+    p99: 99100 ns
+    Max: 1150200 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 2400 ns
+    p50: 225400 ns
+    p95: 560400 ns
+    p99: 788700 ns
+    Max: 1843900 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 50000
+    Blocked submissions: 24849 (49.698%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 619.997 ms
+    Wait duration percentiles (when blocked):
+      Min: 400 ns
+      p50: 19900 ns
+      p95: 69600 ns
+      p99: 113400 ns
+      Max: 1145700 ns
+
+P8-06 (Instrumented) - 4 producers, queue capacity 1024
+  Producers: 4, Queue capacity: 1024, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 620859 ops/sec (16 ms) [Blocked: 0/10000 (0%)]
+    Run 2: 558871 ops/sec (17 ms) [Blocked: 0/10000 (0%)]
+    Run 3: 569466 ops/sec (17 ms) [Blocked: 0/10000 (0%)]
+    Run 4: 583049 ops/sec (17 ms) [Blocked: 0/10000 (0%)]
+    Run 5: 579814 ops/sec (17 ms) [Blocked: 0/10000 (0%)]
+  Throughput (ops/sec):
+    Min:    558871
+    Median: 579814
+    Max:    620859
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 500 ns
+    p95: 1600 ns
+    p99: 3400 ns
+    Max: 244100 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 24200 ns
+    p50: 158400 ns
+    p95: 284500 ns
+    p99: 749600 ns
+    Max: 1107900 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 50000
+    Blocked submissions: 0 (0%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 0 ms
+    Wait duration percentiles: N/A (no blocked submissions)
+
+=== P8-08 Concurrent Trading Workloads ===
+
+B6 - MARKET execution
+  Producers: 1, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 75959 ops/sec (131 ms) [Blocked: 0/20000 (0%)]
+    Run 2: 75334 ops/sec (132 ms) [Blocked: 0/20000 (0%)]
+    Run 3: 82034 ops/sec (121 ms) [Blocked: 0/20000 (0%)]
+    Run 4: 75176 ops/sec (133 ms) [Blocked: 0/20000 (0%)]
+    Run 5: 80447 ops/sec (124 ms) [Blocked: 0/20000 (0%)]
+  Throughput (ops/sec):
+    Min:    75176
+    Median: 75959
+    Max:    82034
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 400 ns
+    p95: 1400 ns
+    p99: 6000 ns
+    Max: 46200 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 14200 ns
+    p50: 141000 ns
+    p95: 618000 ns
+    p99: 776800 ns
+    Max: 1574100 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 100000
+    Blocked submissions: 0 (0%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 0 ms
+    Wait duration percentiles: N/A (no blocked submissions)
+
+B6 - MARKET execution
+  Producers: 2, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 85133 ops/sec (117 ms) [Blocked: 0/20000 (0%)]
+    Run 2: 91921 ops/sec (108 ms) [Blocked: 0/20000 (0%)]
+    Run 3: 85704 ops/sec (116 ms) [Blocked: 0/20000 (0%)]
+    Run 4: 90045 ops/sec (111 ms) [Blocked: 0/20000 (0%)]
+    Run 5: 90406 ops/sec (110 ms) [Blocked: 0/20000 (0%)]
+  Throughput (ops/sec):
+    Min:    85133
+    Median: 90045
+    Max:    91921
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 300 ns
+    p95: 1000 ns
+    p99: 1900 ns
+    Max: 66400 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 23600 ns
+    p50: 477600 ns
+    p95: 1236500 ns
+    p99: 1423500 ns
+    Max: 1746200 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 100000
+    Blocked submissions: 0 (0%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 0 ms
+    Wait duration percentiles: N/A (no blocked submissions)
+
+B6 - MARKET execution
+  Producers: 4, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 60290 ops/sec (165 ms) [Blocked: 8117/20000 (40.585%)]
+    Run 2: 57656 ops/sec (173 ms) [Blocked: 7699/20000 (38.495%)]
+    Run 3: 63491 ops/sec (157 ms) [Blocked: 7771/20000 (38.855%)]
+    Run 4: 60952 ops/sec (164 ms) [Blocked: 7858/20000 (39.29%)]
+    Run 5: 62750 ops/sec (159 ms) [Blocked: 8091/20000 (40.455%)]
+  Throughput (ops/sec):
+    Min:    57656
+    Median: 60952
+    Max:    63491
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 30400 ns
+    p95: 75000 ns
+    p99: 127000 ns
+    Max: 750300 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 64600 ns
+    p50: 1068900 ns
+    p95: 1763200 ns
+    p99: 2386000 ns
+    Max: 3270600 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 100000
+    Blocked submissions: 39536 (39.536%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 1498.37 ms
+    Wait duration percentiles (when blocked):
+      Min: 500 ns
+      p50: 36700 ns
+      p95: 80200 ns
+      p99: 134700 ns
+      Max: 748900 ns
+
+B6 - MARKET execution
+  Producers: 4, Queue capacity: 8, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 68005 ops/sec (147 ms) [Blocked: 7670/20000 (38.35%)]
+    Run 2: 68271 ops/sec (146 ms) [Blocked: 7873/20000 (39.365%)]
+    Run 3: 66280 ops/sec (150 ms) [Blocked: 7623/20000 (38.115%)]
+    Run 4: 66815 ops/sec (149 ms) [Blocked: 7770/20000 (38.85%)]
+    Run 5: 70047 ops/sec (142 ms) [Blocked: 7802/20000 (39.01%)]
+  Throughput (ops/sec):
+    Min:    66280
+    Median: 68005
+    Max:    70047
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 48700 ns
+    p95: 130200 ns
+    p99: 215200 ns
+    Max: 761000 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 15900 ns
+    p50: 759700 ns
+    p95: 2171300 ns
+    p99: 2690300 ns
+    Max: 4026200 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 100000
+    Blocked submissions: 38738 (38.738%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 2529.99 ms
+    Wait duration percentiles (when blocked):
+      Min: 800 ns
+      p50: 58500 ns
+      p95: 140200 ns
+      p99: 232900 ns
+      Max: 760200 ns
+
+B6 - MARKET execution
+  Producers: 4, Queue capacity: 1024, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 85058 ops/sec (117 ms) [Blocked: 0/20000 (0%)]
+    Run 2: 90552 ops/sec (110 ms) [Blocked: 0/20000 (0%)]
+    Run 3: 94263 ops/sec (106 ms) [Blocked: 0/20000 (0%)]
+    Run 4: 88850 ops/sec (112 ms) [Blocked: 0/20000 (0%)]
+    Run 5: 85017 ops/sec (117 ms) [Blocked: 0/20000 (0%)]
+  Throughput (ops/sec):
+    Min:    85017
+    Median: 88850
+    Max:    94263
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 400 ns
+    p95: 1400 ns
+    p99: 2600 ns
+    Max: 156900 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 104500 ns
+    p50: 1179900 ns
+    p95: 2385600 ns
+    p99: 2644200 ns
+    Max: 3186100 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 100000
+    Blocked submissions: 0 (0%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 0 ms
+    Wait duration percentiles: N/A (no blocked submissions)
+
+B7 - Cancellation
+  Producers: 1, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 785373 ops/sec (12 ms) [Blocked: 0/20000 (0%)]
+    Run 2: 1033249 ops/sec (9 ms) [Blocked: 0/20000 (0%)]
+    Run 3: 691175 ops/sec (14 ms) [Blocked: 0/20000 (0%)]
+    Run 4: 980555 ops/sec (10 ms) [Blocked: 0/20000 (0%)]
+    Run 5: 913041 ops/sec (10 ms) [Blocked: 0/20000 (0%)]
+  Throughput (ops/sec):
+    Min:    691175
+    Median: 913041
+    Max:    1033249
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 400 ns
+    p95: 1700 ns
+    p99: 4300 ns
+    Max: 58000 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 4100 ns
+    p50: 16400 ns
+    p95: 35100 ns
+    p99: 63500 ns
+    Max: 208700 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 100000
+    Blocked submissions: 0 (0%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 0 ms
+    Wait duration percentiles: N/A (no blocked submissions)
+
+B7 - Cancellation
+  Producers: 2, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 810097 ops/sec (12 ms) [Blocked: 0/20000 (0%)]
+    Run 2: 797060 ops/sec (12 ms) [Blocked: 0/20000 (0%)]
+    Run 3: 816339 ops/sec (12 ms) [Blocked: 0/20000 (0%)]
+    Run 4: 822463 ops/sec (12 ms) [Blocked: 0/20000 (0%)]
+    Run 5: 1014703 ops/sec (9 ms) [Blocked: 0/20000 (0%)]
+  Throughput (ops/sec):
+    Min:    797060
+    Median: 816339
+    Max:    1014703
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 700 ns
+    p95: 3100 ns
+    p99: 7100 ns
+    Max: 137000 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 2700 ns
+    p50: 35200 ns
+    p95: 68400 ns
+    p99: 113600 ns
+    Max: 286000 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 100000
+    Blocked submissions: 0 (0%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 0 ms
+    Wait duration percentiles: N/A (no blocked submissions)
+
+B7 - Cancellation
+  Producers: 4, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 381369 ops/sec (26 ms) [Blocked: 2919/20000 (14.595%)]
+    Run 2: 447557 ops/sec (22 ms) [Blocked: 3012/20000 (15.06%)]
+    Run 3: 449715 ops/sec (22 ms) [Blocked: 2979/20000 (14.895%)]
+    Run 4: 476812 ops/sec (20 ms) [Blocked: 2840/20000 (14.2%)]
+    Run 5: 460345 ops/sec (21 ms) [Blocked: 3118/20000 (15.59%)]
+  Throughput (ops/sec):
+    Min:    381369
+    Median: 449715
+    Max:    476812
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 1200 ns
+    p95: 22000 ns
+    p99: 43900 ns
+    Max: 353900 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 6900 ns
+    p50: 140700 ns
+    p95: 257200 ns
+    p99: 359900 ns
+    Max: 719600 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 100000
+    Blocked submissions: 14868 (14.868%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 147.695 ms
+    Wait duration percentiles (when blocked):
+      Min: 400 ns
+      p50: 4700 ns
+      p95: 32800 ns
+      p99: 58600 ns
+      Max: 306700 ns
+
+B7 - Cancellation
+  Producers: 4, Queue capacity: 8, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 315495 ops/sec (31 ms) [Blocked: 4405/20000 (22.025%)]
+    Run 2: 310573 ops/sec (32 ms) [Blocked: 4501/20000 (22.505%)]
+    Run 3: 364367 ops/sec (27 ms) [Blocked: 4259/20000 (21.295%)]
+    Run 4: 319691 ops/sec (31 ms) [Blocked: 3957/20000 (19.785%)]
+    Run 5: 332153 ops/sec (30 ms) [Blocked: 4263/20000 (21.315%)]
+  Throughput (ops/sec):
+    Min:    310573
+    Median: 319691
+    Max:    364367
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 3600 ns
+    p95: 44000 ns
+    p99: 79600 ns
+    Max: 474100 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 2000 ns
+    p50: 174400 ns
+    p95: 433600 ns
+    p99: 563000 ns
+    Max: 984000 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 100000
+    Blocked submissions: 21385 (21.385%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 418.028 ms
+    Wait duration percentiles (when blocked):
+      Min: 500 ns
+      p50: 14800 ns
+      p95: 55300 ns
+      p99: 90700 ns
+      Max: 472600 ns
+
+B7 - Cancellation
+  Producers: 4, Queue capacity: 1024, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 851411 ops/sec (11 ms) [Blocked: 0/20000 (0%)]
+    Run 2: 909777 ops/sec (10 ms) [Blocked: 0/20000 (0%)]
+    Run 3: 863252 ops/sec (11 ms) [Blocked: 0/20000 (0%)]
+    Run 4: 838103 ops/sec (11 ms) [Blocked: 0/20000 (0%)]
+    Run 5: 867633 ops/sec (11 ms) [Blocked: 0/20000 (0%)]
+  Throughput (ops/sec):
+    Min:    838103
+    Median: 863252
+    Max:    909777
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 600 ns
+    p95: 3000 ns
+    p99: 7300 ns
+    Max: 212800 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 3000 ns
+    p50: 100200 ns
+    p95: 135900 ns
+    p99: 218300 ns
+    Max: 484300 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 100000
+    Blocked submissions: 0 (0%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 0 ms
+    Wait duration percentiles: N/A (no blocked submissions)
+
+B8 - Mixed trading commands
+  Producers: 1, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 535340 ops/sec (18 ms) [Blocked: 0/16000 (0%)]
+    Run 2: 399042 ops/sec (25 ms) [Blocked: 0/16000 (0%)]
+    Run 3: 485738 ops/sec (20 ms) [Blocked: 0/16000 (0%)]
+    Run 4: 484761 ops/sec (20 ms) [Blocked: 0/16000 (0%)]
+    Run 5: 359338 ops/sec (27 ms) [Blocked: 0/16000 (0%)]
+  Throughput (ops/sec):
+    Min:    359338
+    Median: 484761
+    Max:    535340
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 500 ns
+    p95: 1100 ns
+    p99: 2300 ns
+    Max: 55300 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 7500 ns
+    p50: 25300 ns
+    p95: 73100 ns
+    p99: 126300 ns
+    Max: 410200 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 80000
+    Blocked submissions: 0 (0%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 0 ms
+    Wait duration percentiles: N/A (no blocked submissions)
+
+B8 - Mixed trading commands
+  Producers: 2, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 462992 ops/sec (21 ms) [Blocked: 0/16000 (0%)]
+    Run 2: 446651 ops/sec (22 ms) [Blocked: 0/16000 (0%)]
+    Run 3: 440338 ops/sec (22 ms) [Blocked: 0/16000 (0%)]
+    Run 4: 428816 ops/sec (23 ms) [Blocked: 0/16000 (0%)]
+    Run 5: 466820 ops/sec (21 ms) [Blocked: 0/16000 (0%)]
+  Throughput (ops/sec):
+    Min:    428816
+    Median: 446651
+    Max:    466820
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 500 ns
+    p95: 1200 ns
+    p99: 2400 ns
+    Max: 62000 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 5900 ns
+    p50: 93600 ns
+    p95: 149800 ns
+    p99: 270200 ns
+    Max: 403400 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 80000
+    Blocked submissions: 0 (0%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 0 ms
+    Wait duration percentiles: N/A (no blocked submissions)
+
+B8 - Mixed trading commands
+  Producers: 4, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 190193 ops/sec (52 ms) [Blocked: 5011/16000 (31.3188%)]
+    Run 2: 214053 ops/sec (46 ms) [Blocked: 5077/16000 (31.7312%)]
+    Run 3: 219889 ops/sec (45 ms) [Blocked: 5001/16000 (31.2563%)]
+    Run 4: 210260 ops/sec (47 ms) [Blocked: 5194/16000 (32.4625%)]
+    Run 5: 211884 ops/sec (47 ms) [Blocked: 5106/16000 (31.9125%)]
+  Throughput (ops/sec):
+    Min:    190193
+    Median: 211884
+    Max:    219889
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 2900 ns
+    p95: 38400 ns
+    p99: 71800 ns
+    Max: 366600 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 8400 ns
+    p50: 308600 ns
+    p95: 508300 ns
+    p99: 631100 ns
+    Max: 1057800 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 80000
+    Blocked submissions: 25389 (31.7362%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 400.998 ms
+    Wait duration percentiles (when blocked):
+      Min: 500 ns
+      p50: 6600 ns
+      p95: 49800 ns
+      p99: 85800 ns
+      Max: 362900 ns
+
+B8 - Mixed trading commands
+  Producers: 4, Queue capacity: 8, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 196980 ops/sec (50 ms) [Blocked: 5788/16000 (36.175%)]
+    Run 2: 194532 ops/sec (51 ms) [Blocked: 5806/16000 (36.2875%)]
+    Run 3: 187628 ops/sec (53 ms) [Blocked: 5826/16000 (36.4125%)]
+    Run 4: 198163 ops/sec (50 ms) [Blocked: 5932/16000 (37.075%)]
+    Run 5: 187842 ops/sec (53 ms) [Blocked: 5918/16000 (36.9875%)]
+  Throughput (ops/sec):
+    Min:    187628
+    Median: 194532
+    Max:    198163
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 7300 ns
+    p95: 64900 ns
+    p99: 107400 ns
+    Max: 396000 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 7600 ns
+    p50: 304400 ns
+    p95: 686300 ns
+    p99: 852400 ns
+    Max: 1238100 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 80000
+    Blocked submissions: 29270 (36.5875%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 835.128 ms
+    Wait duration percentiles (when blocked):
+      Min: 500 ns
+      p50: 23800 ns
+      p95: 75200 ns
+      p99: 119200 ns
+      Max: 393500 ns
+
+B8 - Mixed trading commands
+  Producers: 4, Queue capacity: 1024, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 419334 ops/sec (23 ms) [Blocked: 0/16000 (0%)]
+    Run 2: 446935 ops/sec (22 ms) [Blocked: 0/16000 (0%)]
+    Run 3: 442699 ops/sec (22 ms) [Blocked: 0/16000 (0%)]
+    Run 4: 451461 ops/sec (22 ms) [Blocked: 0/16000 (0%)]
+    Run 5: 429869 ops/sec (23 ms) [Blocked: 0/16000 (0%)]
+  Throughput (ops/sec):
+    Min:    419334
+    Median: 442699
+    Max:    451461
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 500 ns
+    p95: 1300 ns
+    p99: 2600 ns
+    Max: 182400 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 67700 ns
+    p50: 233500 ns
+    p95: 351900 ns
+    p99: 479800 ns
+    Max: 680000 ns
+  Queue Backpressure Metrics (across 5 measured runs):
+    Total push attempts: 80000
+    Blocked submissions: 0 (0%)
+    Rejected submissions: 0
+    Cumulative queue wait time: 0 ms
+    Wait duration percentiles: N/A (no blocked submissions)
+
+Note: Measurements include container allocations and API overhead;
+they do not represent isolated algorithmic matching latency.

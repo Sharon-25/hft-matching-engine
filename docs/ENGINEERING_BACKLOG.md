@@ -462,28 +462,80 @@
 
 ## Phase 8 — Latency Benchmarking and Profiling
 
-- [ ] P8-01: Define benchmark methodology and workload.
+- [x] P8-01: Define benchmark methodology and workload.
       Separate single-thread matching latency from
       asynchronous end-to-end submission latency.
-- [ ] P8-02: Implement reproducible benchmark harness.
-      Use Release builds and controlled workloads.
-- [ ] P8-03: Benchmark LIMIT order submissions.
-- [ ] P8-04: Benchmark MARKET order submissions.
-- [ ] P8-05: Benchmark cancellation operations.
-- [ ] P8-06: Benchmark concurrent producer throughput
+      Defined timing boundaries, warm-ups, fixed workloads,
+      percentile reporting and measurement limitations.
+- [x] P8-02: Implement reproducible benchmark harness.
+      Implemented a standalone Release benchmark executable
+      linked against production matching_core.
+      Added timer baseline, controlled workloads,
+      warm-ups and repeated concurrent measurements.
+- [x] P8-03: Benchmark LIMIT order submissions.
+      B1: Non-crossing LIMIT insertion.
+      B2: Crossing LIMIT execution.
+      Verified results outside timed regions.
+- [x] P8-04: Benchmark MARKET order submissions.
+      B3: MARKET execution against resting liquidity.
+      Verified execution quantities and trade details.
+- [x] P8-05: Benchmark cancellation operations.
+      B4: Cancellation of a resting LIMIT order.
+      Verified successful removal and no generated trades.
+- [x] P8-06: Benchmark concurrent producer throughput
       and bounded-queue backpressure.
-- [ ] P8-07: Report latency distribution.
-      Include p50, p95, p99 and maximum latency.
-- [ ] P8-08: Measure throughput under different workloads
+      Verified 1, 2 and 4 producers with queue capacities
+      8, 64 and 1024.
+      Completed 2 warm-up and 5 measured runs per scenario.
+      Added isolated compile-time queue instrumentation.
+      Measured blocked-submission frequency, cumulative
+      queue-wait time and wait-duration percentiles.
+      Preserved the uninstrumented production benchmark.
+- [x] P8-07: Report latency distribution.
+      Implemented minimum, p50, p95, p99 and maximum
+      for direct-engine workloads.
+      Added submission API duration and
+      submission-to-observation latency reporting.
+      Observation latency is not exact completion latency.
+- [x] P8-08: Measure throughput under different workloads
       and queue capacities.
-- [ ] P8-09: Profile allocation behavior, memory usage
-      and cache-related performance where tooling permits.
-- [ ] P8-10: Measure preflight trade-counting and
-      incoming-order staging costs.
-- [ ] P8-11: Record hardware, compiler, optimization flags,
-      benchmark inputs and measurement limitations.
-- [ ] P8-12: Complete baseline performance report
-      and commit Phase 8.
+      Completed B5 non-crossing LIMIT, B6 MARKET execution,
+      B7 cancellation and B8 deterministic mixed workload.
+      Verified 1/2/4 producers with queue capacities 8/64/1024.
+      Release and instrumented benchmark runs completed.
+- [x] P8-09: Profile memory allocation and cache behavior.
+      Implemented Windows-specific LIMIT, MARKET and CANCEL
+      profiling workloads.
+      Identified repeated trade-history vector reallocations.
+      Compared exact-capacity, preallocated and geometric growth.
+      Completed 5 measured runs per strategy.
+      Geometric growth reduced capacity expansion events from
+      10,000 to 15 and achieved a 43.6x median speedup.
+      Isolated experimental changes from production.
+- [x] P8-10: Measure preflight and staging costs.
+      Instrumented preflight counting, trade-history reservation
+      and matching execution in the profiling build.
+      Compared shallow and deep order books with 1 and 100 fills.
+      Completed 30 measured runs per scenario.
+      Recorded median preflight, execution and submission times.
+      Found execution count had greater observed latency impact
+      than resting order count in single-price-level workloads.
+- [x] P8-11: Document benchmark methodology and findings.
+      Consolidated allocation, preflight and execution results.
+      Recorded experimental methodology, measured performance,
+      profiling overhead and measurement limitations.
+      Created PHASE8_PERFORMANCE_REPORT.md.
+      Preserved P8-09 and P8-10 measurement datasets.
+      Documented future optimization opportunities.
+- [x] P8-12: Final verification and Git commit.
+      Successfully built all targets in Release configuration.
+      Passed all 6 regression tests with no failures.
+      Verified benchmark and profiling build configurations.
+      Reviewed production and instrumented build separation.
+      Validated staged changes and resolved whitespace issues.
+      Converted benchmark result files to UTF-8 for GitHub.
+      Prepared Phase 8 implementation, benchmarks and reports
+      for the final Git commit and push.
 
 ## Phase 9 — Optimization, Documentation and Release
 

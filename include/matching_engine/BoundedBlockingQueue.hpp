@@ -9,6 +9,24 @@
 #include <type_traits>
 #include <utility>
 
+#ifdef MATCHING_ENGINE_QUEUE_INSTRUMENTATION
+#include <chrono>
+#include <cstdint>
+#include <vector>
+
+namespace matching_engine {
+
+struct QueueBackpressureStats {
+    std::size_t total_pushes = 0;
+    std::size_t blocked_pushes = 0;
+    std::size_t rejected_pushes = 0;
+    std::int64_t cumulative_wait_ns = 0;
+    std::vector<std::int64_t> wait_durations_ns;
+};
+
+} // namespace matching_engine
+#endif
+
 namespace matching_engine {
 
 template <typename T>
@@ -23,11 +41,19 @@ private:
 
     std::deque<T> queue_;
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::condition_variable not_empty_;
     std::condition_variable not_full_;
 
     bool closed_ = false;
+
+#ifdef MATCHING_ENGINE_QUEUE_INSTRUMENTATION
+    std::size_t total_pushes_ = 0;
+    std::size_t blocked_pushes_ = 0;
+    std::size_t rejected_pushes_ = 0;
+    std::int64_t cumulative_wait_ns_ = 0;
+    std::vector<std::int64_t> wait_durations_ns_;
+#endif
 
 #ifdef MATCHING_ENGINE_TESTING
     std::condition_variable test_waiting_cv_;
@@ -52,7 +78,29 @@ public:
     bool push(T item) {
         std::unique_lock<std::mutex> lock(mutex_);
 
-#ifdef MATCHING_ENGINE_TESTING
+#ifdef MATCHING_ENGINE_QUEUE_INSTRUMENTATION
+        ++total_pushes_;
+        bool was_blocked = false;
+        std::int64_t wait_ns = 0;
+
+        if (!closed_ && queue_.size() >= capacity_) {
+            was_blocked = true;
+            const auto wait_start = std::chrono::steady_clock::now();
+
+            not_full_.wait(lock, [this] {
+                return closed_ || queue_.size() < capacity_;
+            });
+
+            const auto wait_end = std::chrono::steady_clock::now();
+            wait_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                wait_end - wait_start
+            ).count();
+        } else {
+            not_full_.wait(lock, [this] {
+                return closed_ || queue_.size() < capacity_;
+            });
+        }
+#elif defined(MATCHING_ENGINE_TESTING)
         if (!closed_ && queue_.size() >= capacity_) {
             ++test_waiting_producers_;
             test_waiting_cv_.notify_all();
@@ -73,7 +121,18 @@ public:
         });
 #endif
 
+#ifdef MATCHING_ENGINE_QUEUE_INSTRUMENTATION
+        if (was_blocked) {
+            ++blocked_pushes_;
+            cumulative_wait_ns_ += wait_ns;
+            wait_durations_ns_.push_back(wait_ns);
+        }
+#endif
+
         if (closed_) {
+#ifdef MATCHING_ENGINE_QUEUE_INSTRUMENTATION
+            ++rejected_pushes_;
+#endif
             return false;
         }
 
@@ -84,6 +143,19 @@ public:
 
         return true;
     }
+
+#ifdef MATCHING_ENGINE_QUEUE_INSTRUMENTATION
+    QueueBackpressureStats backpressure_stats() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return {
+            total_pushes_,
+            blocked_pushes_,
+            rejected_pushes_,
+            cumulative_wait_ns_,
+            wait_durations_ns_
+        };
+    }
+#endif
 
 #ifdef MATCHING_ENGINE_TESTING
     void wait_for_blocked_producers_for_test(

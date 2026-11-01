@@ -57,6 +57,14 @@ std::future<bool> MatchingWorker::cancel(OrderId id) {
     return future;
 }
 
+#ifdef MATCHING_ENGINE_QUEUE_INSTRUMENTATION
+
+QueueBackpressureStats MatchingWorker::queue_backpressure_stats() const {
+    return queue_.backpressure_stats();
+}
+
+#endif
+
 #ifdef MATCHING_ENGINE_TESTING
 
 std::future<SubmissionResult>

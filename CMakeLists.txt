@@ -64,6 +64,185 @@ target_link_libraries(
     matching_core
 )
 
+# Performance benchmarks
+option(
+    BUILD_BENCHMARKS
+    "Build standalone performance benchmarks"
+    OFF
+)
+
+if(BUILD_BENCHMARKS)
+    add_executable(
+        matching_benchmarks
+        benchmarks/BenchmarkMain.cpp
+    )
+
+    target_link_libraries(
+        matching_benchmarks
+        PRIVATE
+        matching_core
+    )
+
+    if(MSVC)
+        target_compile_options(
+            matching_benchmarks
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    else()
+        target_compile_options(
+            matching_benchmarks
+            PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    # Optional instrumented benchmark configuration for queue backpressure measurement
+    add_library(
+        matching_core_instrumented
+        STATIC
+        src/Order.cpp
+        src/OrderBook.cpp
+        src/MatchingEngine.cpp
+        src/MatchingWorker.cpp
+    )
+
+    target_include_directories(
+        matching_core_instrumented
+        PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_compile_features(
+        matching_core_instrumented
+        PUBLIC
+        cxx_std_20
+    )
+
+    set_target_properties(
+        matching_core_instrumented
+        PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+
+    target_compile_definitions(
+        matching_core_instrumented
+        PUBLIC
+        MATCHING_ENGINE_QUEUE_INSTRUMENTATION
+    )
+
+    if(MSVC)
+        target_compile_options(
+            matching_core_instrumented
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    else()
+        target_compile_options(
+            matching_core_instrumented
+            PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_executable(
+        matching_benchmarks_instrumented
+        benchmarks/BenchmarkMain.cpp
+    )
+
+    target_link_libraries(
+        matching_benchmarks_instrumented
+        PRIVATE
+        matching_core_instrumented
+    )
+
+    if(MSVC)
+        target_compile_options(
+            matching_benchmarks_instrumented
+            PRIVATE
+            /W4
+            /permissive-
+        )
+    else()
+        target_compile_options(
+            matching_benchmarks_instrumented
+            PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    # P8-09: isolated profiling build
+    if(WIN32)
+        add_library(
+            matching_core_profiling
+            STATIC
+            src/Order.cpp
+            src/OrderBook.cpp
+            src/MatchingEngine.cpp
+            src/MatchingWorker.cpp
+        )
+
+        target_include_directories(
+            matching_core_profiling
+            PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+
+        target_compile_features(
+            matching_core_profiling
+            PUBLIC
+            cxx_std_20
+        )
+
+        target_compile_definitions(
+            matching_core_profiling
+            PUBLIC
+            MATCHING_ENGINE_PROFILING
+        )
+
+        if(MSVC)
+            target_compile_options(
+                matching_core_profiling
+                PRIVATE
+                /W4
+                /permissive-
+            )
+        endif()
+    endif()
+
+    # P8-09: standalone engine memory profiling
+    if(WIN32)
+        add_executable(
+            matching_allocation_profile
+            benchmarks/AllocationProfile.cpp
+        )
+
+        target_link_libraries(
+            matching_allocation_profile
+            PRIVATE
+            matching_core_profiling
+            Psapi
+        )
+
+        if(MSVC)
+            target_compile_options(
+                matching_allocation_profile
+                PRIVATE
+                /W4
+                /permissive-
+            )
+        endif()
+    endif()
+endif()
+
 # Testing
 include(CTest)
 

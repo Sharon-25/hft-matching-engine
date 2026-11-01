@@ -2,6 +2,8 @@
 
 #include <unordered_set>
 #include <vector>
+#include <cstddef>
+#include <cstdint>
 
 #include "matching_engine/OrderBook.hpp"
 #include "matching_engine/Trade.hpp"
@@ -25,6 +27,15 @@ struct MarketOrderAccounting {
     Quantity cancelled_quantity;
 };
 
+#ifdef MATCHING_ENGINE_PROFILING
+struct MarketProfilingStats {
+    std::uint64_t preflight_ns = 0;
+    std::uint64_t reservation_ns = 0;
+    std::uint64_t execution_ns = 0;
+    std::uint64_t submissions = 0;
+};
+#endif
+
 class MatchingEngine {
 private:
     OrderBook book_;
@@ -41,6 +52,10 @@ private:
 
     AcceptedOrderIds accepted_order_ids_;
     std::vector<Trade> trades_;
+#ifdef MATCHING_ENGINE_PROFILING
+    bool geometric_trade_growth_for_profiling_ = false;
+    MarketProfilingStats market_profiling_stats_{};
+#endif
 
 public:
     using MarketOrderAccounting = matching_engine::MarketOrderAccounting;
@@ -64,6 +79,15 @@ public:
 
     const OrderBook& order_book() const;
     const std::vector<Trade>& trades() const noexcept;
+#ifdef MATCHING_ENGINE_PROFILING
+    void reserve_trade_capacity_for_profiling(
+        std::size_t capacity
+    );
+
+    void enable_geometric_trade_growth_for_profiling() noexcept;
+
+    const MarketProfilingStats& market_profiling_stats() const noexcept;
+#endif
 
 #ifdef MATCHING_ENGINE_TESTING
     void set_insertion_failure_for_test(

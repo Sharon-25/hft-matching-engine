@@ -1,0 +1,564 @@
+=== Low-Latency Matching Engine Benchmarks ===
+
+Clock steady: true
+Timer baseline
+  Min: 0 ns
+  p50: 100 ns
+  p95: 100 ns
+  p99: 100 ns
+  Max: 6900 ns
+
+B1 - Non-crossing LIMIT insertion
+  Min: 700 ns
+  p50: 700 ns
+  p95: 800 ns
+  p99: 800 ns
+  Max: 7000 ns
+
+B2 - Crossing LIMIT execution
+  Min: 1400 ns
+  p50: 1400 ns
+  p95: 1500 ns
+  p99: 1500 ns
+  Max: 10000 ns
+
+B3 - MARKET execution
+  Min: 600 ns
+  p50: 700 ns
+  p95: 700 ns
+  p99: 700 ns
+  Max: 47900 ns
+
+B4 - Order cancellation
+  Min: 200 ns
+  p50: 300 ns
+  p95: 400 ns
+  p99: 400 ns
+  Max: 19600 ns
+
+=== P8-06 Concurrent Producer Throughput and Backpressure ===
+
+P8-06 - 1 producer, queue capacity 64
+  Producers: 1, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 609365 ops/sec (16 ms)
+    Run 2: 588415 ops/sec (16 ms)
+    Run 3: 576531 ops/sec (17 ms)
+    Run 4: 639427 ops/sec (15 ms)
+    Run 5: 598705 ops/sec (16 ms)
+  Throughput (ops/sec):
+    Min:    576531
+    Median: 598705
+    Max:    639427
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 400 ns
+    p95: 1200 ns
+    p99: 2100 ns
+    Max: 54500 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 5200 ns
+    p50: 17500 ns
+    p95: 70800 ns
+    p99: 164100 ns
+    Max: 857400 ns
+
+P8-06 - 2 producers, queue capacity 64
+  Producers: 2, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 611643 ops/sec (16 ms)
+    Run 2: 629405 ops/sec (15 ms)
+    Run 3: 668712 ops/sec (14 ms)
+    Run 4: 647441 ops/sec (15 ms)
+    Run 5: 649506 ops/sec (15 ms)
+  Throughput (ops/sec):
+    Min:    611643
+    Median: 647441
+    Max:    668712
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 500 ns
+    p95: 1600 ns
+    p99: 3900 ns
+    Max: 108500 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 3400 ns
+    p50: 53200 ns
+    p95: 107700 ns
+    p99: 346600 ns
+    Max: 1038700 ns
+
+P8-06 - 4 producers, queue capacity 64
+  Producers: 4, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 342772 ops/sec (29 ms)
+    Run 2: 358807 ops/sec (27 ms)
+    Run 3: 381346 ops/sec (26 ms)
+    Run 4: 365728 ops/sec (27 ms)
+    Run 5: 367909 ops/sec (27 ms)
+  Throughput (ops/sec):
+    Min:    342772
+    Median: 365728
+    Max:    381346
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 1600 ns
+    p95: 24000 ns
+    p99: 46200 ns
+    Max: 656300 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 2700 ns
+    p50: 171700 ns
+    p95: 284400 ns
+    p99: 545600 ns
+    Max: 918500 ns
+
+P8-06 - 4 producers, queue capacity 8
+  Producers: 4, Queue capacity: 8, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 282432 ops/sec (35 ms)
+    Run 2: 286078 ops/sec (34 ms)
+    Run 3: 303633 ops/sec (32 ms)
+    Run 4: 326710 ops/sec (30 ms)
+    Run 5: 302899 ops/sec (33 ms)
+  Throughput (ops/sec):
+    Min:    282432
+    Median: 302899
+    Max:    326710
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 3400 ns
+    p95: 46800 ns
+    p99: 83000 ns
+    Max: 2554100 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 3400 ns
+    p50: 182500 ns
+    p95: 469100 ns
+    p99: 670300 ns
+    Max: 2997000 ns
+
+P8-06 - 4 producers, queue capacity 1024
+  Producers: 4, Queue capacity: 1024, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 611946 ops/sec (16 ms)
+    Run 2: 590210 ops/sec (16 ms)
+    Run 3: 541521 ops/sec (18 ms)
+    Run 4: 622300 ops/sec (16 ms)
+    Run 5: 672196 ops/sec (14 ms)
+  Throughput (ops/sec):
+    Min:    541521
+    Median: 611946
+    Max:    672196
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 500 ns
+    p95: 1500 ns
+    p99: 3700 ns
+    Max: 210500 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 31400 ns
+    p50: 147600 ns
+    p95: 291400 ns
+    p99: 789300 ns
+    Max: 983800 ns
+
+=== P8-08 Concurrent Trading Workloads ===
+
+B6 - MARKET execution
+  Producers: 1, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 69042 ops/sec (144 ms)
+    Run 2: 69679 ops/sec (143 ms)
+    Run 3: 71006 ops/sec (140 ms)
+    Run 4: 70770 ops/sec (141 ms)
+    Run 5: 75875 ops/sec (131 ms)
+  Throughput (ops/sec):
+    Min:    69042
+    Median: 70770
+    Max:    75875
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 400 ns
+    p95: 1400 ns
+    p99: 6200 ns
+    Max: 48900 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 14400 ns
+    p50: 151200 ns
+    p95: 735600 ns
+    p99: 951700 ns
+    Max: 1519500 ns
+
+B6 - MARKET execution
+  Producers: 2, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 86315 ops/sec (115 ms)
+    Run 2: 87866 ops/sec (113 ms)
+    Run 3: 88466 ops/sec (113 ms)
+    Run 4: 88502 ops/sec (112 ms)
+    Run 5: 87244 ops/sec (114 ms)
+  Throughput (ops/sec):
+    Min:    86315
+    Median: 87866
+    Max:    88502
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 300 ns
+    p95: 1000 ns
+    p99: 2000 ns
+    Max: 78900 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 36400 ns
+    p50: 479000 ns
+    p95: 1250500 ns
+    p99: 1457400 ns
+    Max: 2282800 ns
+
+B6 - MARKET execution
+  Producers: 4, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 59321 ops/sec (168 ms)
+    Run 2: 62550 ops/sec (159 ms)
+    Run 3: 60256 ops/sec (165 ms)
+    Run 4: 62108 ops/sec (161 ms)
+    Run 5: 63259 ops/sec (158 ms)
+  Throughput (ops/sec):
+    Min:    59321
+    Median: 62108
+    Max:    63259
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 29100 ns
+    p95: 75100 ns
+    p99: 130800 ns
+    Max: 1348400 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 103300 ns
+    p50: 1064300 ns
+    p95: 1887400 ns
+    p99: 1998400 ns
+    Max: 2708200 ns
+
+B6 - MARKET execution
+  Producers: 4, Queue capacity: 8, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 68339 ops/sec (146 ms)
+    Run 2: 68447 ops/sec (146 ms)
+    Run 3: 67538 ops/sec (148 ms)
+    Run 4: 68497 ops/sec (145 ms)
+    Run 5: 70479 ops/sec (141 ms)
+  Throughput (ops/sec):
+    Min:    67538
+    Median: 68447
+    Max:    70479
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 49400 ns
+    p95: 118500 ns
+    p99: 213000 ns
+    Max: 911800 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 14500 ns
+    p50: 734200 ns
+    p95: 2125000 ns
+    p99: 2662600 ns
+    Max: 3648400 ns
+
+B6 - MARKET execution
+  Producers: 4, Queue capacity: 1024, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 91284 ops/sec (109 ms)
+    Run 2: 89802 ops/sec (111 ms)
+    Run 3: 91342 ops/sec (109 ms)
+    Run 4: 90257 ops/sec (110 ms)
+    Run 5: 95996 ops/sec (104 ms)
+  Throughput (ops/sec):
+    Min:    89802
+    Median: 91284
+    Max:    95996
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 500 ns
+    p95: 1500 ns
+    p99: 3100 ns
+    Max: 254200 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 95800 ns
+    p50: 1200900 ns
+    p95: 2208700 ns
+    p99: 2685400 ns
+    Max: 3234900 ns
+
+B7 - Cancellation
+  Producers: 1, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 973292 ops/sec (10 ms)
+    Run 2: 954025 ops/sec (10 ms)
+    Run 3: 676118 ops/sec (14 ms)
+    Run 4: 948244 ops/sec (10 ms)
+    Run 5: 825736 ops/sec (12 ms)
+  Throughput (ops/sec):
+    Min:    676118
+    Median: 948244
+    Max:    973292
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 400 ns
+    p95: 1800 ns
+    p99: 4100 ns
+    Max: 55700 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 4100 ns
+    p50: 16000 ns
+    p95: 32700 ns
+    p99: 57200 ns
+    Max: 236800 ns
+
+B7 - Cancellation
+  Producers: 2, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 859195 ops/sec (11 ms)
+    Run 2: 903105 ops/sec (11 ms)
+    Run 3: 870253 ops/sec (11 ms)
+    Run 4: 908298 ops/sec (11 ms)
+    Run 5: 896153 ops/sec (11 ms)
+  Throughput (ops/sec):
+    Min:    859195
+    Median: 896153
+    Max:    908298
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 700 ns
+    p95: 3200 ns
+    p99: 7400 ns
+    Max: 120500 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 4300 ns
+    p50: 31900 ns
+    p95: 60900 ns
+    p99: 118400 ns
+    Max: 212100 ns
+
+B7 - Cancellation
+  Producers: 4, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 572718 ops/sec (17 ms)
+    Run 2: 578111 ops/sec (17 ms)
+    Run 3: 589091 ops/sec (16 ms)
+    Run 4: 577263 ops/sec (17 ms)
+    Run 5: 595844 ops/sec (16 ms)
+  Throughput (ops/sec):
+    Min:    572718
+    Median: 578111
+    Max:    595844
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 1100 ns
+    p95: 12800 ns
+    p99: 30700 ns
+    Max: 205400 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 3900 ns
+    p50: 107800 ns
+    p95: 176800 ns
+    p99: 252800 ns
+    Max: 549200 ns
+
+B7 - Cancellation
+  Producers: 4, Queue capacity: 8, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 437640 ops/sec (22 ms)
+    Run 2: 419348 ops/sec (23 ms)
+    Run 3: 464110 ops/sec (21 ms)
+    Run 4: 434022 ops/sec (23 ms)
+    Run 5: 447449 ops/sec (22 ms)
+  Throughput (ops/sec):
+    Min:    419348
+    Median: 437640
+    Max:    464110
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 2800 ns
+    p95: 33300 ns
+    p99: 63500 ns
+    Max: 467400 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 2300 ns
+    p50: 125300 ns
+    p95: 327500 ns
+    p99: 425400 ns
+    Max: 804100 ns
+
+B7 - Cancellation
+  Producers: 4, Queue capacity: 1024, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 964366 ops/sec (10 ms)
+    Run 2: 961288 ops/sec (10 ms)
+    Run 3: 902983 ops/sec (11 ms)
+    Run 4: 915264 ops/sec (10 ms)
+    Run 5: 926234 ops/sec (10 ms)
+  Throughput (ops/sec):
+    Min:    902983
+    Median: 926234
+    Max:    964366
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 600 ns
+    p95: 2600 ns
+    p99: 6200 ns
+    Max: 210700 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 2600 ns
+    p50: 93600 ns
+    p95: 128800 ns
+    p99: 206500 ns
+    Max: 504900 ns
+
+B8 - Mixed trading commands
+  Producers: 1, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 549266 ops/sec (18 ms)
+    Run 2: 458688 ops/sec (21 ms)
+    Run 3: 539819 ops/sec (18 ms)
+    Run 4: 546087 ops/sec (18 ms)
+    Run 5: 443862 ops/sec (22 ms)
+  Throughput (ops/sec):
+    Min:    443862
+    Median: 539819
+    Max:    549266
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 400 ns
+    p95: 1100 ns
+    p99: 2100 ns
+    Max: 54200 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 7700 ns
+    p50: 23700 ns
+    p95: 50700 ns
+    p99: 94600 ns
+    Max: 306600 ns
+
+B8 - Mixed trading commands
+  Producers: 2, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 463314 ops/sec (21 ms)
+    Run 2: 479904 ops/sec (20 ms)
+    Run 3: 427789 ops/sec (23 ms)
+    Run 4: 467941 ops/sec (21 ms)
+    Run 5: 472484 ops/sec (21 ms)
+  Throughput (ops/sec):
+    Min:    427789
+    Median: 467941
+    Max:    479904
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 500 ns
+    p95: 1100 ns
+    p99: 2200 ns
+    Max: 80000 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 5500 ns
+    p50: 90900 ns
+    p95: 143900 ns
+    p99: 259800 ns
+    Max: 443500 ns
+
+B8 - Mixed trading commands
+  Producers: 4, Queue capacity: 64, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 214015 ops/sec (46 ms)
+    Run 2: 237986 ops/sec (42 ms)
+    Run 3: 223457 ops/sec (44 ms)
+    Run 4: 237507 ops/sec (42 ms)
+    Run 5: 225863 ops/sec (44 ms)
+  Throughput (ops/sec):
+    Min:    214015
+    Median: 225863
+    Max:    237986
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 2700 ns
+    p95: 35100 ns
+    p99: 64100 ns
+    Max: 426500 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 25400 ns
+    p50: 284000 ns
+    p95: 450800 ns
+    p99: 585500 ns
+    Max: 886200 ns
+
+B8 - Mixed trading commands
+  Producers: 4, Queue capacity: 8, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 197883 ops/sec (50 ms)
+    Run 2: 225277 ops/sec (44 ms)
+    Run 3: 202821 ops/sec (49 ms)
+    Run 4: 213982 ops/sec (46 ms)
+    Run 5: 202775 ops/sec (49 ms)
+  Throughput (ops/sec):
+    Min:    197883
+    Median: 202821
+    Max:    225277
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 300 ns
+    p50: 6700 ns
+    p95: 60100 ns
+    p99: 96000 ns
+    Max: 499900 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 7100 ns
+    p50: 277700 ns
+    p95: 641300 ns
+    p99: 816500 ns
+    Max: 1213000 ns
+
+B8 - Mixed trading commands
+  Producers: 4, Queue capacity: 1024, Batch size: 32
+  Warm-up runs: 2 (unreported)
+  Measured runs: 5 (10000 commands each)
+    Run 1: 439299 ops/sec (22 ms)
+    Run 2: 461024 ops/sec (21 ms)
+    Run 3: 456648 ops/sec (21 ms)
+    Run 4: 494430 ops/sec (20 ms)
+    Run 5: 461037 ops/sec (21 ms)
+  Throughput (ops/sec):
+    Min:    439299
+    Median: 461024
+    Max:    494430
+  Submission API duration (includes queue blocking, future creation, synchronization):
+    Min: 200 ns
+    p50: 500 ns
+    p95: 1400 ns
+    p99: 2600 ns
+    Max: 210100 ns
+  Submission-to-observation latency (submit to future collection):
+    Min: 65700 ns
+    p50: 227800 ns
+    p95: 302100 ns
+    p99: 441000 ns
+    Max: 594100 ns
+
+Note: Measurements include container allocations and API overhead;
+they do not represent isolated algorithmic matching latency.

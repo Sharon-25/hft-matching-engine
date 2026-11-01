@@ -59,6 +59,10 @@ public:
     std::future<SubmissionResult> submit(Order order);
     std::future<bool> cancel(OrderId id);
 
+#ifdef MATCHING_ENGINE_QUEUE_INSTRUMENTATION
+    QueueBackpressureStats queue_backpressure_stats() const;
+#endif
+
 #ifdef MATCHING_ENGINE_TESTING
     std::future<SubmissionResult> submit_with_failure_for_test(
         Order order,
