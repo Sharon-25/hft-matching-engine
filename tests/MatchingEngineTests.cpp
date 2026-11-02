@@ -2968,6 +2968,59 @@ void test_engine_trade_history_allocation_failure() {
         CHECK(engine.order_book().validate_invariants());
     }
 }
+
+void test_trade_history_capacity_reuse_with_failure_injection() {
+    MatchingEngine engine;
+
+    // Four resting orders, each matched by a separate market order.
+    for (OrderId id = 30001; id <= 30004; ++id) {
+        const Order resting(id, Side::SELL, 11000, 10);
+        CHECK(engine.submit_limit_order(resting).status ==
+              SubmissionStatus::ACCEPTED);
+    }
+
+    // Three executions establish size 3 and capacity at least 4.
+    for (OrderId id = 40001; id <= 40003; ++id) {
+        const Order incoming(
+            id, Side::BUY, OrderType::MARKET, 0, 10
+        );
+
+        const auto result = engine.submit_market_order(incoming);
+
+        CHECK(result.status == SubmissionStatus::ACCEPTED);
+        CHECK(result.executed_quantity == 10);
+        CHECK(result.remaining_quantity == 0);
+    }
+
+    CHECK(engine.trades().size() == 3);
+
+    const std::size_t capacity_before =
+        engine.trades().capacity();
+
+    CHECK(capacity_before >= 4);
+
+    // Inject a failure that would trigger if a new
+    // trade-history reservation were attempted.
+    testing::AllocationController::fail_on_trade_history();
+
+    const Order fourth_market(
+        40004, Side::BUY, OrderType::MARKET, 0, 10
+    );
+
+    const auto result = engine.submit_market_order(fourth_market);
+
+    CHECK(result.status == SubmissionStatus::ACCEPTED);
+    CHECK(result.executed_quantity == 10);
+    CHECK(result.remaining_quantity == 0);
+
+    CHECK(engine.trades().size() == 4);
+    CHECK(engine.trades().capacity() == capacity_before);
+    CHECK(engine.order_book().order_count() == 0);
+    CHECK(engine.order_book().validate_invariants());
+    CHECK(engine.was_order_id_accepted(40004));
+
+    testing::AllocationController::reset();
+}
 #endif
 
 void test_seeded_randomized_differential_sequences() {
@@ -3076,6 +3129,62 @@ void test_seeded_randomized_differential_sequences() {
     }
 }
 
+void test_geometric_trade_history_growth() {
+    MatchingEngine engine;
+
+    constexpr std::size_t trade_count = 16;
+
+    for (std::size_t i = 0; i < trade_count; ++i) {
+        const Order resting(
+            static_cast<OrderId>(10000 + i),
+            Side::SELL,
+            11000,
+            10
+        );
+
+        CHECK(
+            engine.submit_limit_order(resting).status ==
+            SubmissionStatus::ACCEPTED
+        );
+    }
+
+    std::size_t previous_capacity = engine.trades().capacity();
+
+    for (std::size_t i = 0; i < trade_count; ++i) {
+        const Order incoming(
+            static_cast<OrderId>(20000 + i),
+            Side::BUY,
+            OrderType::MARKET,
+            0,
+            10
+        );
+
+        const auto result = engine.submit_market_order(incoming);
+
+        CHECK(result.status == SubmissionStatus::ACCEPTED);
+        CHECK(result.executed_quantity == 10);
+        CHECK(result.remaining_quantity == 0);
+        CHECK(engine.trades().size() == i + 1);
+
+        const std::size_t current_capacity =
+            engine.trades().capacity();
+
+        CHECK(current_capacity >= engine.trades().size());
+
+        if (i + 1 <= previous_capacity) {
+            CHECK(current_capacity == previous_capacity);
+        } else {
+            CHECK(current_capacity >= previous_capacity * 2);
+        }
+
+        previous_capacity = current_capacity;
+        CHECK(engine.order_book().validate_invariants());
+    }
+
+    CHECK(engine.trades().size() == trade_count);
+    CHECK(engine.order_book().order_count() == 0);
+}
+
 int main() {
     test_engine_starts_with_empty_book();
     test_engine_is_not_copyable_or_movable();
@@ -3132,11 +3241,13 @@ int main() {
     test_engine_maximum_quantity_multiple_trades();
     test_engine_maximum_quantity_partial_multi_trade();
     test_engine_market_maximum_quantity_multiple_trades();
+    test_geometric_trade_history_growth();
 
 #ifdef MATCHING_ENGINE_TESTING
     test_engine_id_reservation_allocation_failures();
     test_engine_book_allocation_failure_rollback();
     test_engine_trade_history_allocation_failure();
+    test_trade_history_capacity_reuse_with_failure_injection();
 #endif
 
     std::cout << "MatchingEngine tests passed\n";

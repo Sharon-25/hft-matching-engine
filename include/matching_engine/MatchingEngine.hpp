@@ -53,7 +53,7 @@ private:
     AcceptedOrderIds accepted_order_ids_;
     std::vector<Trade> trades_;
 #ifdef MATCHING_ENGINE_PROFILING
-    bool geometric_trade_growth_for_profiling_ = false;
+    bool exact_trade_growth_for_profiling_ = false;
     MarketProfilingStats market_profiling_stats_{};
 #endif
 
@@ -84,7 +84,7 @@ public:
         std::size_t capacity
     );
 
-    void enable_geometric_trade_growth_for_profiling() noexcept;
+    void enable_exact_trade_growth_for_profiling() noexcept;
 
     const MarketProfilingStats& market_profiling_stats() const noexcept;
 #endif

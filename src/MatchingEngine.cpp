@@ -42,6 +42,25 @@ public:
     OrderIdReservation& operator=(const OrderIdReservation&) = delete;
 };
 
+std::size_t next_trade_capacity(
+    std::size_t current_capacity,
+    std::size_t required_capacity,
+    std::size_t max_capacity
+) {
+    if (required_capacity <= current_capacity) {
+        return current_capacity;
+    }
+
+    const std::size_t doubled_capacity =
+        current_capacity > max_capacity / 2
+            ? max_capacity
+            : std::max<std::size_t>(
+                  1, current_capacity * 2
+              );
+
+    return std::max(required_capacity, doubled_capacity);
+}
+
 } // unnamed namespace
 
 SubmissionResult MatchingEngine::submit_limit_order(
@@ -102,7 +121,15 @@ SubmissionResult MatchingEngine::submit_limit_order(
     }
 #endif
 
-    trades_.reserve(required_trade_capacity);
+    if (required_trade_capacity > trades_.capacity()) {
+        trades_.reserve(
+            next_trade_capacity(
+                trades_.capacity(),
+                required_trade_capacity,
+                trades_.max_size()
+            )
+        );
+    }
 
     // Allocate incoming order storage before any execution.
     if (!book_.add_active_order(order)) {
@@ -285,29 +312,22 @@ SubmissionResult MatchingEngine::submit_market_order(
         std::chrono::steady_clock::now();
 #endif
 
+    if (required_trade_capacity > trades_.capacity()) {
 #ifdef MATCHING_ENGINE_PROFILING
-    if (geometric_trade_growth_for_profiling_ &&
-        required_trade_capacity > trades_.capacity()) {
-
-        const std::size_t current_capacity = trades_.capacity();
-        const std::size_t max_capacity = trades_.max_size();
-
-        const std::size_t doubled_capacity =
-            current_capacity > max_capacity / 2
-                ? max_capacity
-                : std::max<std::size_t>(
-                      1, current_capacity * 2
-                  );
-
-        trades_.reserve(
-            std::max(required_trade_capacity, doubled_capacity)
-        );
-    } else {
-        trades_.reserve(required_trade_capacity);
-    }
-#else
-    trades_.reserve(required_trade_capacity);
+        if (exact_trade_growth_for_profiling_) {
+            trades_.reserve(required_trade_capacity);
+        } else
 #endif
+        {
+            trades_.reserve(
+                next_trade_capacity(
+                    trades_.capacity(),
+                    required_trade_capacity,
+                    trades_.max_size()
+                )
+            );
+        }
+    }
 
 #ifdef MATCHING_ENGINE_PROFILING
     const auto reservation_end =
@@ -443,8 +463,8 @@ void MatchingEngine::reserve_trade_capacity_for_profiling(
     trades_.reserve(capacity);
 }
 
-void MatchingEngine::enable_geometric_trade_growth_for_profiling() noexcept {
-    geometric_trade_growth_for_profiling_ = true;
+void MatchingEngine::enable_exact_trade_growth_for_profiling() noexcept {
+    exact_trade_growth_for_profiling_ = true;
 }
 
 const MarketProfilingStats&

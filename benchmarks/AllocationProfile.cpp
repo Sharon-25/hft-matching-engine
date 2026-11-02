@@ -93,8 +93,8 @@ void run_market_profile(bool preallocate, bool geometric) {
         );
     }
 
-    if (geometric) {
-        engine.enable_geometric_trade_growth_for_profiling();
+    if (!geometric && !preallocate) {
+        engine.enable_exact_trade_growth_for_profiling();
     }
 
     if (preallocate) {
@@ -185,8 +185,6 @@ void run_depth_profile(
     }
 
     MatchingEngine engine;
-
-    engine.enable_geometric_trade_growth_for_profiling();
 
     // Load resting orders before starting measurement.
     for (std::size_t i = 0; i < resting_count; ++i) {

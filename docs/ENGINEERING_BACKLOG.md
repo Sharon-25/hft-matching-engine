@@ -534,27 +534,133 @@
       Reviewed production and instrumented build separation.
       Validated staged changes and resolved whitespace issues.
       Converted benchmark result files to UTF-8 for GitHub.
-      Prepared Phase 8 implementation, benchmarks and reports
-      for the final Git commit and push.
+      Committed and pushed Phase 8 changes to GitHub.
+      Commit: 7bfa820.
+      Verified clean working tree and synchronized master.
 
 ## Phase 9 — Optimization, Documentation and Release
 
-- [ ] P9-01: Identify measured performance bottlenecks.
-- [ ] P9-02: Apply targeted optimizations supported
+- [x] P9-01: Identify measured performance bottlenecks.
+      Reviewed Phase 8 allocation and latency measurements.
+      Identified repeated exact-capacity trade-history
+      reservation as the primary measured bottleneck.
+      Baseline median: 245.732 ms for 10,000 MARKET orders.
+      Geometric-growth median: 5.6377 ms.
+      Identified preflight counting and matching execution
+      as secondary profiling areas.
+      Prioritized exception-safe trade capacity optimization.
+      Deferred bounded trade-history policy to P9-06.
+      No production changes made during this review.
+- [x] P9-02: Apply targeted optimizations supported
       by benchmark evidence.
-- [ ] P9-03: Re-run correctness and concurrency tests
+- [x] P9-03: Re-run correctness and concurrency tests
       after each optimization.
-- [ ] P9-04: Compare optimized performance against
+- [x] P9-04: Compare optimized performance against
       the recorded baseline.
-- [ ] P9-05: Review duplicated OrderId ownership between
+      Decision:
+      Retain both historical OrderId sets.
+      MatchingEngine tracks accepted incoming IDs, including immediately executed orders that never rest in the book.OrderBook tracks IDs inserted into the book and independently protects its insertion API against historical ID reuse.
+      The sets overlap for resting orders but serve different ownership boundaries. Consolidation is deferred pending the session-wide identity ownership review in P9-07.
+      Trade-off:
+      Additional hash-set memory and lookup overhead are retained to preserve current component contracts and exception safety.
+- [x] P9-05: Review duplicated OrderId ownership between
       MatchingEngine and OrderBook.
-- [ ] P9-06: Define trade-history consumption or
+- [x] P9-06: Define trade-history consumption or
       bounded-storage policy.
-- [ ] P9-07: Review session-wide identity ownership
-      across multiple order books.
-- [ ] P9-08: Review MARKET SELL preflight crossing-bound
-      assumptions and future price-model extensibility.
-- [ ] P9-09: Prepare reproducible production Release builds.
+      P9-06 Decision — Trade-History Policy
+
+      Current implementation:
+      - Trade records accumulate in std::vector<Trade>.
+      - Geometric capacity growth reduces allocation overhead.
+      - Historical storage remains unbounded.
+
+      Chosen direction:
+      - Retain the existing trade-history API for this release.
+      - Define future batch consumption with explicit acknowledgment.
+      - Do not discard unconsumed trades.
+      - Require a bounded pending-trade policy and backpressure
+        before claiming production-safe memory behavior.
+
+      Known limitation:
+      - A long-running engine can experience unbounded memory growth
+        when trades are not consumed.
+
+      Implementation deferred:
+      - Consumer acknowledgment protocol.
+      - Maximum pending-trade capacity.
+      - Backpressure or overflow handling.
+      - Consumption and recovery tests.
+- [x] P9-07: Review session-wide identity ownership across multiple order books.
+      P9-07 Decision — OrderId Uniqueness Scope
+
+      Current contract:
+      - OrderId uniqueness is enforced within one MatchingEngine instance.
+      - Accepted IDs cannot be reused during that instance's lifetime.
+      - Filled and cancelled orders retain their historical IDs.
+      - Failed admission must not permanently consume an ID.
+
+      Current architecture:
+      - One MatchingEngine owns one OrderBook.
+      - No multi-instrument session manager is implemented.
+
+      Future extension:
+      - Define whether IDs are session-global or instrument-scoped.
+      - Introduce shared identity ownership only if multiple books
+        are managed within one session.
+      - Preserve atomic reservation, rollback and commitment semantics.
+      - Test cross-book duplicates and concurrent admission.
+
+      Decision:
+      Retain the current per-engine identity model.
+      No production code changes are required for P9-07.
+- [x] P9-08: Review MARKET SELL preflight crossing-bound assumptions and future price-model extensibility.
+      P9-08 Decision — MARKET Preflight Price Boundaries
+
+      Current behavior:
+      - MARKET BUY uses numeric_limits<Price>::max().
+      - MARKET SELL uses Price{0}.
+      - LIMIT order prices must be strictly positive.
+      - MARKET orders have price_ticks == 0.
+
+      Verification:
+      - MARKET SELL preflight includes all valid resting BUY levels.
+      - MARKET BUY preflight includes all valid resting SELL levels.
+      - Preflight bounds are not execution prices.
+
+      Decision:
+      Retain the existing implementation.
+
+      Known assumption:
+      All valid resting LIMIT prices are strictly positive.
+
+      Future extension:
+      If zero or negative LIMIT prices become supported, revisit
+      the preflight API and remove its dependency on synthetic
+      MARKET price boundaries.
+- [x] P9-09: Prepare reproducible production Release builds.
+P9-09 — Production Release Build Verification
+
+Environment:
+- Windows 11
+- MSVC / Visual Studio generator
+- CMake
+- C++20
+
+Configuration:
+- BUILD_TESTING=OFF
+- BUILD_BENCHMARKS=OFF
+- Release configuration
+
+Results:
+- matching_core.lib built successfully.
+- matching_engine.exe built successfully.
+- Executable launched successfully.
+- Bid/ask demonstration output verified.
+- Test and benchmark options confirmed disabled.
+
+Production build command:
+cmake -S . -B build-production -DBUILD_TESTING=OFF -DBUILD_BENCHMARKS=OFF
+cmake --build build-production --config Release
 - [ ] P9-10: Document application architecture,
       build instructions, usage, testing and benchmarks.
 - [ ] P9-11: Prepare final correctness, performance

@@ -6,10 +6,15 @@ The engine supports limit and market orders, price-time priority, partial and fu
 
 The project is developed using a **correctness-first, measurement-driven approach**, with particular attention to data structures, deterministic execution, memory management, exception safety, multithreading and automated verification.
 
-**Current status:** Phases 1–7 are complete, including core
-matching, deterministic differential verification, concurrent
-command processing, shutdown safety and concurrency audits.
-Phase 8 latency benchmarking and profiling is next.
+**Current status:** Phases 1 through 8 are complete, including core matching,
+correctness hardening, concurrent command processing, deterministic
+and randomized verification, latency benchmarking and allocation
+profiling.
+
+Phase 9 optimization has demonstrated measurable improvements to
+trade-history allocation behavior. Production Release build
+verification is complete, with final documentation and release
+verification in progress.
 
 ## Key Features
 
@@ -235,7 +240,7 @@ For recorded verification results and revisions, see [Verification Log](docs/VER
 - A build tool supported by CMake
 - Windows with MSVC and an appropriate Visual Studio developer terminal for the commands below
 
-The project has been developed and tested using Windows, MSVC, CMake and NMake.
+The project has been developed and tested on Windows using MSVC, CMake, NMake and the Visual Studio/MSBuild generator.
 
 Other platforms and toolchains have not yet been established as verified configurations.
 
@@ -264,6 +269,21 @@ ctest --test-dir build-release --output-on-failure
 These commands use the single-configuration NMake generator. An existing build directory must use the generator with which it was originally configured.
 
 The `matching_engine` executable runs the demonstration in `src/main.cpp`. Automated regression tests execute separately through CTest.
+
+### Production Release Build (Visual Studio / MSVC)
+
+A separate production configuration excludes test and benchmark
+targets.
+
+```powershell
+cmake -S . -B build-production `
+    -DBUILD_TESTING=OFF `
+    -DBUILD_BENCHMARKS=OFF
+
+cmake --build build-production --config Release
+
+.\build-production\Release\matching_engine.exe
+```
 
 ## Project Structure
 
@@ -294,10 +314,17 @@ hft-matching-engine/
 |   |-- MatchingWorkerTests.cpp
 |   `-- BoundedBlockingQueueTests.cpp
 |
+|-- benchmarks/
+|   |-- BenchmarkMain.cpp
+|   `-- AllocationProfile.cpp
+|
 |-- docs/
 |   |-- CONCURRENCY_ARCHITECTURE.md
 |   |-- ENGINEERING_BACKLOG.md
 |   |-- MARKET_ORDER_POLICY.md
+|   |-- PHASE8_PERFORMANCE_REPORT.md
+|   |-- P8-09-ALLOCATION-PROFILING.md
+|   |-- P9_04_BENCHMARK_REPORT.md
 |   `-- VERIFICATION_LOG.md
 |
 |-- CMakeLists.txt
@@ -308,20 +335,20 @@ hft-matching-engine/
 
 | Phase | Focus | Status |
 |---|---|---|
-| 1-3 | Project setup, order model and order book | Completed |
+| 1–3 | Project setup, order model and order book | Completed |
 | 4 | Limit order matching and price-time priority | Completed |
 | 5 | Market order execution | Completed |
-| 6 | Correctness hardening, failure testing and differential verification | Completed, with documented follow-ups |
+| 6 | Correctness hardening, failure testing and differential verification | Completed |
 | 7 | Concurrent command processing and worker lifecycle | Completed |
-| 8 | Latency and throughput benchmarking | Planned |
-| 9 | Profiling and measurement-driven optimization | Planned |
+| 8 | Latency benchmarking, throughput analysis and allocation profiling | Completed |
+| 9 | Measurement-driven optimization, architecture review and release preparation | In progress |
 
 ### Current Engineering Priorities
 
-1. Define Phase 8 benchmark workloads and measurement methodology.
-2. Implement reproducible latency and throughput benchmarks.
-3. Profile allocation behavior and identify measured bottlenecks.
-4. Review remaining engineering limitations during Phase 9.
+1. Complete architecture and usage documentation.
+2. Consolidate correctness, performance and known-limitations reports.
+3. Run final Debug, Release and production build verification.
+4. Prepare the final repository release.
 
 Additional allocator-failure coverage and exception-safety verification remain tracked follow-up items.
 
@@ -329,19 +356,54 @@ Detailed engineering tasks and outstanding limitations are maintained in the [En
 
 ## Performance and Benchmarking
 
-The project is intended to investigate latency-sensitive systems engineering, but no measured latency or throughput results are currently claimed.
+Phase 8 established reproducible benchmark workloads for matching,
+latency, throughput, concurrency and allocation behavior.
 
-Planned benchmarking will examine:
+Phase 9 identified excessive trade-history vector reallocations
+as a measurable performance bottleneck.
 
-- Order submission and matching latency
-- Cancellation latency
-- Throughput under different workloads
-- Latency distributions, including median and tail percentiles
-- Queue contention and backpressure
-- Allocation and memory-management overhead
-- Performance differences between baseline and optimized implementations
+### Trade-History Allocation Optimization
 
-Benchmark results will be published only after the methodology, environment and measurements are documented.
+The original implementation expanded trade-history capacity
+exactly as required. The optimized implementation uses geometric
+capacity growth.
+
+The following results were recorded using a Release build on
+Windows with MSVC.
+
+**Workload:** 10,000 MARKET orders generating 10,000 trades.
+Seven measured runs were performed for each configuration.
+
+| Configuration | Median elapsed time | Capacity growth events |
+|---|---:|---:|
+| Exact-capacity growth (baseline) | 259.361 ms | 10,000 |
+| Geometric growth (optimized) | 10.6309 ms | 15 |
+| Preallocated capacity | 10.9291 ms | 0 |
+
+### Observed Improvement
+
+- Approximately **24.4x faster** than the exact-capacity baseline.
+- Approximately **95.9% lower median elapsed time**.
+- Approximately **99.85% fewer capacity growth events**.
+- Geometric growth retained additional capacity to reduce
+  repeated reallocations.
+
+These results apply to the measured workload and environment.
+They are not universal matching-engine speedup claims or
+guarantees of production tail latency.
+
+The exact-capacity baseline also exhibited substantial
+run-to-run variability.
+
+### Benchmark Documentation
+
+- [Phase 8 Performance Report](docs/PHASE8_PERFORMANCE_REPORT.md)
+- [Phase 8 Allocation Profiling](docs/P8-09-ALLOCATION-PROFILING.md)
+- [Phase 9 Optimization Comparison](docs/P9_04_BENCHMARK_REPORT.md)
+
+Performance optimization follows a measurement-driven process:
+establish a baseline, identify a bottleneck, modify the
+implementation, rerun correctness tests and compare results.
 
 ## Scope and Limitations
 
@@ -356,16 +418,35 @@ It currently does not claim:
 - Zero-allocation matching
 - Fully verified concurrent object destruction
 - Exhaustive exception-safety guarantees
-- Published or independently validated performance results
+- Independently validated production performance results
 
 The goal is to build a well-tested foundation, make engineering tradeoffs explicit and improve performance using reproducible evidence.
 
+### Known Engineering Limitations
+
+- Trade-history storage remains unbounded; no consumer acknowledgment
+  or bounded pending-trade policy is implemented.
+- Historical order IDs are retained throughout the engine lifetime.
+- MatchingEngine and OrderBook maintain overlapping historical ID sets
+  for different ownership responsibilities.
+- Order ID uniqueness is scoped to a MatchingEngine instance.
+- Multi-instrument session-wide identity management is not implemented.
+- MARKET preflight assumes strictly positive LIMIT prices.
+- Exchange connectivity, persistent storage and crash recovery
+  are not implemented.
+- Benchmark results are workload-specific and do not establish
+  guaranteed production tail latency.
+- The current executable is a demonstration, not a trading service.
+
 ## Documentation
 
-- [Concurrency Architecture](docs/CONCURRENCY_ARCHITECTURE.md) - Thread-safety contracts, ordering guarantees and concurrency design
-- [Engineering Backlog](docs/ENGINEERING_BACKLOG.md) - Development phases, remaining tasks and known limitations
-- [Market Order Policy](docs/MARKET_ORDER_POLICY.md) - Market order execution and admission behavior
-- [Verification Log](docs/VERIFICATION_LOG.md) - Test results and verification history
+- [Concurrency Architecture](docs/CONCURRENCY_ARCHITECTURE.md)
+- [Market Order Policy](docs/MARKET_ORDER_POLICY.md)
+- [Engineering Backlog](docs/ENGINEERING_BACKLOG.md)
+- [Verification Log](docs/VERIFICATION_LOG.md)
+- [Phase 8 Performance Report](docs/PHASE8_PERFORMANCE_REPORT.md)
+- [Phase 8 Allocation Profiling](docs/P8-09-ALLOCATION-PROFILING.md)
+- [Phase 9 Benchmark Comparison](docs/P9_04_BENCHMARK_REPORT.md)
 
 ## Development Philosophy
 
