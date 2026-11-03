@@ -1877,6 +1877,20 @@ public:
         };
     }
 
+    bool cancel_order(OrderId id) {
+        for (auto it = active_orders_.begin();
+            it != active_orders_.end();
+            ++it) {
+
+            if (it->id == id) {
+                active_orders_.erase(it);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     std::optional<Price> best_bid() const {
         std::optional<Price> best;
         for (const auto& ord : active_orders_) {
@@ -2040,9 +2054,127 @@ public:
         verify_state(prod_res, ref_res);
         return prod_res;
     }
+
+    bool cancel_order(OrderId id) {
+        const bool ref_result = ref_.cancel_order(id);
+        const bool prod_result = engine_.cancel_order(id);
+
+        CHECK(prod_result == ref_result);
+
+        CHECK(engine_.order_book().validate_invariants());
+
+        CHECK(engine_.order_book().best_bid() == ref_.best_bid());
+        CHECK(engine_.order_book().best_ask() == ref_.best_ask());
+
+        CHECK(engine_.order_book().order_count() == ref_.order_count());
+
+        const auto& prod_trades = engine_.trades();
+        const auto& ref_trades = ref_.trades();
+
+        CHECK(prod_trades.size() == ref_trades.size());
+
+        for (std::size_t i = 0; i < prod_trades.size(); ++i) {
+            CHECK(prod_trades[i].incoming_order_id ==
+                  ref_trades[i].incoming_order_id);
+            CHECK(prod_trades[i].resting_order_id ==
+                  ref_trades[i].resting_order_id);
+            CHECK(prod_trades[i].execution_price_ticks ==
+                  ref_trades[i].execution_price_ticks);
+            CHECK(prod_trades[i].executed_quantity ==
+                  ref_trades[i].executed_quantity);
+        }
+
+        for (OrderId tracked_id : tracked_ids_) {
+            CHECK(engine_.was_order_id_accepted(tracked_id) ==
+                  ref_.was_order_id_accepted(tracked_id));
+
+            CHECK(engine_.order_book().was_order_id_used(tracked_id) ==
+                  ref_.was_order_id_used(tracked_id));
+
+            CHECK(engine_.order_book().contains(tracked_id) ==
+                  ref_.contains(tracked_id));
+
+            const Order* prod_order =
+                engine_.order_book().find_order(tracked_id);
+
+            const ReferenceOrder* ref_order =
+                ref_.find_order(tracked_id);
+
+            CHECK((prod_order != nullptr) == (ref_order != nullptr));
+
+            if (prod_order != nullptr && ref_order != nullptr) {
+                CHECK(prod_order->remaining_quantity() ==
+                      ref_order->remaining_quantity);
+                CHECK(prod_order->executed_quantity() ==
+                      ref_order->executed_quantity);
+                CHECK(prod_order->price_ticks() == ref_order->price);
+                CHECK(prod_order->side() == ref_order->side);
+                CHECK(prod_order->status() == ref_order->status());
+            }
+        }
+
+        for (const auto& [side, price] : tracked_levels_) {
+            CHECK(engine_.order_book().order_ids_at_price(side, price) ==
+                  ref_.order_ids_at_price(side, price));
+        }
+
+        return prod_result;
+    }
 };
 
 } // unnamed namespace
+
+void test_differential_cancellation() {
+    DifferentialHarness harness;
+
+    // Active resting order.
+    CHECK(harness.submit_limit_order(
+        Order(90001, Side::BUY, OrderType::LIMIT, 10000, 10)
+    ).status == SubmissionStatus::ACCEPTED);
+
+    CHECK(harness.cancel_order(90001));
+    CHECK(!harness.cancel_order(90001));
+
+    // Unknown OrderId.
+    CHECK(!harness.cancel_order(99999));
+
+    // Fully filled order.
+    CHECK(harness.submit_limit_order(
+        Order(90002, Side::SELL, OrderType::LIMIT, 10100, 5)
+    ).status == SubmissionStatus::ACCEPTED);
+
+    CHECK(harness.submit_limit_order(
+        Order(90003, Side::BUY, OrderType::LIMIT, 10100, 5)
+    ).status == SubmissionStatus::ACCEPTED);
+
+    CHECK(!harness.cancel_order(90002));
+    CHECK(!harness.cancel_order(90003));
+
+    // Partially filled resting order.
+    CHECK(harness.submit_limit_order(
+        Order(90004, Side::SELL, OrderType::LIMIT, 10200, 10)
+    ).status == SubmissionStatus::ACCEPTED);
+
+    CHECK(harness.submit_limit_order(
+        Order(90005, Side::BUY, OrderType::LIMIT, 10200, 4)
+    ).status == SubmissionStatus::ACCEPTED);
+
+    CHECK(harness.cancel_order(90004));
+    CHECK(!harness.cancel_order(90004));
+
+    // Historical OrderId must remain unavailable.
+    CHECK(harness.submit_limit_order(
+        Order(90001, Side::BUY, OrderType::LIMIT, 10000, 1)
+    ).status == SubmissionStatus::DUPLICATE_ID);
+
+    CHECK(harness.submit_limit_order(
+        Order(90002, Side::SELL, OrderType::LIMIT, 10100, 1)
+    ).status == SubmissionStatus::DUPLICATE_ID);
+
+    CHECK(harness.submit_limit_order(
+        Order(90004, Side::SELL, OrderType::LIMIT, 10200, 1)
+    ).status == SubmissionStatus::DUPLICATE_ID);
+}
 
 void test_differential_fifo_at_same_price() {
     DifferentialHarness harness;
@@ -3070,8 +3202,29 @@ void test_seeded_randomized_differential_sequences() {
 
             const std::uint64_t operation_type = bounded_random(100);
 
+            if (operation_type >= 80) {
+                OrderId cancel_id;
+
+                if (!submitted_ids.empty() && bounded_random(4) != 0) {
+                    // Target a previously submitted ID.
+                    cancel_id = submitted_ids[
+                        static_cast<std::size_t>(
+                            bounded_random(submitted_ids.size())
+                        )
+                    ];
+                } else {
+                    // Target an ID never generated by submissions.
+                    cancel_id = static_cast<OrderId>(
+                        operations_per_seed + 1 + bounded_random(1000)
+                    );
+                }
+
+                harness.cancel_order(cancel_id);
+                continue;
+            }
+
             const bool duplicate =
-                operation_type >= 90 && !submitted_ids.empty();
+                operation_type >= 70 && !submitted_ids.empty();
 
             OrderId id;
 
@@ -3093,7 +3246,7 @@ void test_seeded_randomized_differential_sequences() {
                 static_cast<Quantity>(1 + bounded_random(250));
 
             const bool use_limit =
-                operation_type < 65 ||
+                operation_type < 55 ||
                 (duplicate && bounded_random(2) == 0);
 
             if (use_limit) {
@@ -3227,6 +3380,7 @@ int main() {
     test_limit_match_only_resting_fully_filled();
     test_limit_match_both_orders_partially_filled();
     test_limit_order_id_reservation_hardening();
+    test_differential_cancellation();
     test_differential_fifo_at_same_price();
     test_differential_multiple_price_levels();
     test_differential_partial_fills_and_continuation();

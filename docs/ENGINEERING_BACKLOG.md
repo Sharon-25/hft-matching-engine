@@ -801,7 +801,7 @@ cmake --build build-production --config Release
 
 ### Phase 10.2 — Randomized cancellation verification
 
-- [ ] P10-02: Extend the reference matching model
+- [x] P10-02: Extend the reference matching model
       to support order cancellation.
 
       Implement cancellation independently of the
@@ -812,7 +812,7 @@ cmake --build build-production --config Release
       Support cancellation of active resting orders,
       unknown IDs, filled orders and previously
       cancelled orders.
-- [ ] P10-03: Extend seeded randomized differential
+- [x] P10-03: Extend seeded randomized differential
       tests to include cancellation operations.
 
       Generate reproducible mixed LIMIT, MARKET
@@ -826,7 +826,7 @@ cmake --build build-production --config Release
 
       Record failing seeds and operation indices
       for reproducible debugging.
-- [ ] P10-04: Complete cancellation regression verification.
+- [x] P10-04: Complete cancellation regression verification.
 
       Run deterministic and randomized cancellation
       tests in Debug and Release configurations.
