@@ -836,29 +836,63 @@ cmake --build build-production --config Release
 
 ### Phase 10.3 — Sanitizer verification
 
-- [ ] P10-05: Evaluate available sanitizer toolchains.
+- [x] P10-05: Evaluate available sanitizer toolchains.
 
-      Check compiler and platform support for
-      AddressSanitizer and ThreadSanitizer.
+      Verified Windows 11, Visual Studio 2022,
+      MSVC 19.43 and CMake 3.30.5.
 
-      Preserve the existing Windows/MSVC
-      production build configuration.
+      Confirmed MSVC x64 AddressSanitizer support
+      using /fsanitize=address.
 
-      Document unavailable diagnostics explicitly.
-- [ ] P10-06: Run supported sanitizer diagnostics.
+      Confirmed ThreadSanitizer is unavailable
+      with the current native Windows/MSVC toolchain.
 
-      Execute relevant matching, cancellation
-      and concurrent worker tests using supported
-      sanitizer configurations.
+      Preserved existing Debug, Release and
+      production build configurations.
 
-      Investigate and resolve any reproducible
-      defects identified.
+      Used a separate build-asan directory.
 
-      Record commands, toolchain versions,
-      results and remaining limitations.
+- [x] P10-06: Run supported sanitizer diagnostics.
 
-      Do not claim race freedom if ThreadSanitizer
-      cannot be executed.
+      Configured the x64 AddressSanitizer build:
+
+      cmake -S . -B build-asan -G "Visual Studio 17 2022" -A x64 `
+        -DBUILD_TESTING=ON `
+        -DBUILD_BENCHMARKS=OFF `
+        -DCMAKE_CXX_FLAGS="/fsanitize=address /Zi /EHsc"
+
+      Built using:
+
+      cmake --build build-asan --config Debug
+
+      Added the MSVC Hostx64/x64 runtime directory
+      to PATH to resolve missing ASan runtime DLLs.
+
+      Executed:
+
+      ctest --test-dir build-asan -C Debug --output-on-failure
+
+      Result: 6/6 CTest suites passed (16.16 seconds).
+
+      Verified order, order-book, matching-engine,
+      bounded-queue, command and worker test suites.
+
+      Included deterministic cancellation and
+      seeded randomized differential coverage
+      within MatchingEngineTests.
+
+      No AddressSanitizer violations were reported
+      during the executed test suites.
+
+      ThreadSanitizer was not executed because
+      it is unsupported by the current toolchain.
+
+      Limitations:
+      - ASan covers only exercised execution paths.
+      - ASan does not establish absence of data races.
+      - Concurrent worker code is not claimed race-free.
+      - TSan verification remains unavailable
+        in the tested Windows/MSVC environment.
 
 ### Phase 10.4 — Final release verification
 
