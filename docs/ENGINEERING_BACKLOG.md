@@ -7,13 +7,22 @@
 - Release builds must execute meaningful tests.
 - Performance claims must be supported by reproducible benchmarks.
 - Known limitations must be documented.
+- Portfolio completion does not imply production readiness.
+- Deferred features must be documented and must not
+  be represented as implemented functionality.
 
 ## Phase 4 — Limit Order Matching
 
 - [x] P4-01: Guarantee failure-safe incoming order admission.
       Verified for tested insertion failure checkpoints.
-      The guarantee covers logical trading state; allocated capacity
-      may change. Actual allocator-failure testing remains pending.
+      The guarantee covers logical trading state; allocated
+      capacity may change.
+
+      Additional allocator/container failure-injection
+      verification was completed under P6-12
+      (commit f19d45d).
+
+      Exhaustive allocation-failure coverage is not claimed.
 - [x] P4-02: Prepare all required storage before irreversible executions.
       Implemented for incoming book storage and trade-vector capacity.
 - [x] P4-03: Preserve accepted IDs after any completed execution.
@@ -553,18 +562,85 @@
       No production changes made during this review.
 - [x] P9-02: Apply targeted optimizations supported
       by benchmark evidence.
+
+      Implemented geometric trade-history vector
+      capacity growth in both LIMIT and MARKET
+      matching paths.
+
+      Preserved pre-mutation capacity reservation
+      and existing logical exception-safety guarantees.
+
+      Added overflow-aware capacity growth and
+      regression tests for allocation behavior.
+
+      Retained a profiling-only exact-growth mode
+      for reproducible baseline comparison.
+
+      Implementation committed as part of 7070012.
 - [x] P9-03: Re-run correctness and concurrency tests
-      after each optimization.
+      after optimization.
+
+      Verified geometric growth and capacity reuse
+      through targeted regression tests.
+
+      Final Debug CTest: 6/6 passed.
+      Final Release CTest: 6/6 passed.
+
+      Confirmed Release tests remain meaningful
+      without relying on disabled assert() checks.
 - [x] P9-04: Compare optimized performance against
       the recorded baseline.
+
+      Compared exact-capacity growth, geometric
+      growth and preallocated trade-history storage
+      using the documented 10,000-trade workload.
+
+      Final measured median elapsed times:
+      - Exact-capacity baseline: 259.361 ms.
+      - Geometric growth: 10.6309 ms.
+      - Preallocated storage: 10.9291 ms.
+
+      Geometric growth reduced observed capacity
+      expansion events from 10,000 to 15.
+
+      The final comparison showed approximately
+      24.4x lower median elapsed time than the
+      exact-capacity baseline.
+
+      Earlier Phase 8 profiling reported a separate
+      43.6x comparison under its recorded conditions.
+      These results represent different measurement
+      rounds and should not be combined.
+
+      Evidence: docs/P9_04_BENCHMARK_REPORT.md.
+
+      Results are workload-specific and do not
+      establish production latency guarantees.
+
+- [x] P9-05: Review duplicated OrderId ownership
+      between MatchingEngine and OrderBook.
+
       Decision:
       Retain both historical OrderId sets.
-      MatchingEngine tracks accepted incoming IDs, including immediately executed orders that never rest in the book.OrderBook tracks IDs inserted into the book and independently protects its insertion API against historical ID reuse.
-      The sets overlap for resting orders but serve different ownership boundaries. Consolidation is deferred pending the session-wide identity ownership review in P9-07.
+
+      MatchingEngine tracks accepted incoming IDs,
+      including immediately executed orders that
+      never rest in the book.
+
+      OrderBook tracks IDs inserted into the book
+      and independently protects its insertion API
+      against historical ID reuse.
+
+      The sets overlap for resting orders but serve
+      different ownership boundaries.
+
       Trade-off:
-      Additional hash-set memory and lookup overhead are retained to preserve current component contracts and exception safety.
-- [x] P9-05: Review duplicated OrderId ownership between
-      MatchingEngine and OrderBook.
+      Additional hash-set memory and lookup overhead
+      are retained to preserve existing component
+      contracts and exception-safety behavior.
+
+      Future consolidation remains optional.
+      No production code changes were required.
 - [x] P9-06: Define trade-history consumption or
       bounded-storage policy.
       P9-06 Decision — Trade-History Policy
@@ -661,12 +737,172 @@ Results:
 Production build command:
 cmake -S . -B build-production -DBUILD_TESTING=OFF -DBUILD_BENCHMARKS=OFF
 cmake --build build-production --config Release
-- [ ] P9-10: Document application architecture,
+- [x] P9-10: Document application architecture,
       build instructions, usage, testing and benchmarks.
-- [ ] P9-11: Prepare final correctness, performance
+
+      Updated README.md with the current architecture,
+      matching behavior, concurrency design, build configurations, test coverage, performance measurements and limitations.
+
+      Verified UTF-8 encoding, Unicode symbols, Markdown
+      formatting and local documentation links.
+- [x] P9-11: Prepare final correctness, performance
       and known-limitations report.
-- [ ] P9-12: Complete final regression verification
+
+      Created docs/FINAL_ENGINEERING_REPORT.md.
+
+      Documented architecture, correctness verification,
+      concurrency behavior, engineering tradeoffs,
+      production build configuration and known limitations.
+
+      Recorded the Phase 9 benchmark comparison:
+      259.361 ms baseline versus 10.6309 ms optimized
+      median elapsed time, approximately 24.4x faster
+      for the measured 10,000-trade workload.
+
+      Verified UTF-8 encoding and corrected trailing whitespace.
+- [x] P9-12: Complete final regression verification
       and release documentation.
+
+      Debug CTest: 6/6 passed.
+      Release CTest: 6/6 passed.
+
+      Production Release build verified with
+      BUILD_TESTING=OFF and BUILD_BENCHMARKS=OFF.
+
+      Production executable launched successfully.
+      No test or benchmark targets generated.
+
+      Final documentation and code audits passed.
+      No staged whitespace errors identified.
+
+      Phase 9 implementation, benchmark report
+      and final engineering report committed
+      and pushed to origin/master.
+
+      Implementation commit: 7070012.
+
+      Final backlog corrections are tracked
+      in a separate documentation commit.
+
+
+## Phase 10 — Final Hardening and Portfolio Closure
+
+### Phase 10.1 — Backlog reconciliation
+
+- [x] P10-01: Reconcile completed milestones and documentation.
+      Correct outdated backlog entries and verify
+      Phase 9 optimization and benchmark evidence.
+
+      Ensure completed reviews are distinguished
+      from deferred implementation work.
+
+      Verify README, engineering backlog and
+      final reports describe the same release scope.
+
+### Phase 10.2 — Randomized cancellation verification
+
+- [ ] P10-02: Extend the reference matching model
+      to support order cancellation.
+
+      Implement cancellation independently of the
+      production OrderBook data structures.
+
+      Preserve historical OrderId uniqueness.
+
+      Support cancellation of active resting orders,
+      unknown IDs, filled orders and previously
+      cancelled orders.
+- [ ] P10-03: Extend seeded randomized differential
+      tests to include cancellation operations.
+
+      Generate reproducible mixed LIMIT, MARKET
+      and CANCEL operation sequences.
+
+      Compare production and reference cancellation
+      results after each operation.
+
+      Verify active orders, best bid/ask, trade history,
+      historical IDs and matching invariants.
+
+      Record failing seeds and operation indices
+      for reproducible debugging.
+- [ ] P10-04: Complete cancellation regression verification.
+
+      Run deterministic and randomized cancellation
+      tests in Debug and Release configurations.
+
+      Confirm existing matching and concurrent
+      worker regression suites remain successful.
+
+### Phase 10.3 — Sanitizer verification
+
+- [ ] P10-05: Evaluate available sanitizer toolchains.
+
+      Check compiler and platform support for
+      AddressSanitizer and ThreadSanitizer.
+
+      Preserve the existing Windows/MSVC
+      production build configuration.
+
+      Document unavailable diagnostics explicitly.
+- [ ] P10-06: Run supported sanitizer diagnostics.
+
+      Execute relevant matching, cancellation
+      and concurrent worker tests using supported
+      sanitizer configurations.
+
+      Investigate and resolve any reproducible
+      defects identified.
+
+      Record commands, toolchain versions,
+      results and remaining limitations.
+
+      Do not claim race freedom if ThreadSanitizer
+      cannot be executed.
+
+### Phase 10.4 — Final release verification
+
+- [ ] P10-07: Complete final Debug and Release verification.
+
+      Build all supported test targets.
+
+      Run all six CTest suites in both configurations.
+
+      Verify tests remain meaningful in Release.
+- [ ] P10-08: Verify production Release build.
+
+      Configure with BUILD_TESTING=OFF
+      and BUILD_BENCHMARKS=OFF.
+
+      Build and launch the production executable.
+
+      Confirm test-only and profiling targets
+      are excluded from the production build.
+- [ ] P10-09: Finalize portfolio documentation.
+
+      Update README and engineering reports
+      only where final verification changes
+      the documented evidence.
+
+      Record any sanitizer results and
+      randomized cancellation test coverage.
+
+      Preserve accurate benchmark methodology,
+      limitations and reproducibility instructions.
+- [ ] P10-10: Complete final Git commit and push.
+
+      Verify source changes and documentation.
+
+      Run git diff --check.
+
+      Commit and push completed Phase 10 changes.
+
+      Confirm clean working tree and synchronized
+      local master and origin/master.
+
+      Record the final commit hash.
+
+      Declare the defined portfolio scope complete.
 
 ## Later-phase and cross-phase verification
 
@@ -685,17 +921,40 @@ cmake --build build-production --config Release
       Commit: db058b7.
 - [ ] Extend the reference matching model and seeded
       randomized differential tests to include cancellation.
-      Track separately from P7-45 concurrent stress testing.
-- [ ] Establish trade-history memory management policy
-      for long-running sessions (P9-06).
-- [ ] Benchmark preflight counting and incoming-order
+      Tracked under P10-02 through P10-04.
+- [x] Review trade-history memory management policy (P9-06).
+      Retained the existing trade-history API for this release.
+      Defined future batch consumption with acknowledgment.
+      Current trade-history storage remains unbounded.
+- [ ] Implement bounded trade-history consumption
+      with acknowledgment, retention limits and backpressure.
+      Deferred beyond the defined portfolio release scope.
+      The policy was reviewed under P9-06.
+- [x] Benchmark preflight counting and incoming-order
       staging overhead (P8-10).
-- [ ] Review duplicated engine-level and book-level
+      Measured preflight, reservation and execution costs
+      across shallow and deep order-book workloads.
+      Results documented in the Phase 8 performance report.
+- [x] Review duplicated engine-level and book-level
       historical OrderId state (P9-05).
-- [ ] Validate all supported shutdown and concurrent
+      Decision: retain both sets for this release.
+      The sets serve different ownership boundaries.
+      Future consolidation remains optional.
+- [x] Validate planned shutdown and concurrent
       API interactions (P7-34 through P7-52).
-- [ ] Complete reproducible latency and throughput
-      benchmarking before making performance claims.
+      Completed deterministic lifecycle, backpressure,
+      shutdown and concurrent correctness tests.
+      Completed thread-safety and ownership source audits.
+      Exhaustive concurrency verification is not claimed.
+- [x] Complete reproducible latency and throughput
+      benchmarking (Phase 8).
+      Measured direct-engine latency, concurrent throughput
+      and bounded-queue backpressure.
+      Completed Phase 9 optimization comparison.
+      Results are workload-specific, not production guarantees.
+- [ ] Evaluate and execute supported sanitizer diagnostics.
+      Tracked under P10-05 and P10-06.
+      Unsupported diagnostics must be documented.
 
 ## Architecture decisions
 
@@ -730,14 +989,28 @@ cmake --build build-production --config Release
   failure and exception path is not claimed.
 - No comprehensive strong exception guarantee is claimed
   for all operations after irreversible trade execution.
+  The planned post-trade exception-safety audit was
+  completed under P6-13.
 - Seeded randomized differential verification was
   completed under P6-14 (commit 6c49ddd).
   Five seeds with 1,000 operations per seed were tested.
   Randomized cancellation coverage remains pending.
 - Trade history currently has no enforced memory bound.
+  Trade records accumulate in std::vector<Trade>.
+  Geometric capacity growth reduces allocation overhead
+  but does not limit total memory consumption.
+  Bounded consumption, acknowledgment and backpressure
+  remain future implementation work.
 - Historical OrderId uniqueness is represented at both
   MatchingEngine and OrderBook levels.
-  The duplicated ownership remains under review.
+  The duplicated ownership was reviewed under P9-05.
+  Both sets are intentionally retained for this release
+  because they protect different ownership boundaries.
+  Future consolidation remains optional.
+- OrderId uniqueness is enforced within a single
+  MatchingEngine instance.
+  No multi-instrument session manager or cross-book
+  identity coordination has been implemented.
 - The matching engine uses a single worker thread.
   Concurrent producers are supported, but matching
   operations themselves are serialized.
@@ -746,26 +1019,50 @@ cmake --build build-production --config Release
   not by the wall-clock order in which concurrent
   producers begin their API calls.
 - Bounded queue backpressure can block producers.
-  Comprehensive shutdown-race and blocked-producer
-  verification remains pending under Phase 7.6.
-- Concurrent correctness stress testing with mixed
-  submission and cancellation workloads remains pending.
-- A comprehensive thread-safety and lifecycle audit
-  remains pending under Phase 7.8.
-- No production-grade latency or throughput benchmark
-  results have been established yet.
-- No performance superiority or HFT production-readiness
-  claim is made without benchmark and validation evidence.
+  Phase 7 shutdown, backpressure and concurrent
+  correctness tests have been completed.
+  These tests do not establish exhaustive race freedom
+  or formal concurrency correctness.
+- Thread-safety, shared-state ownership and worker
+  lifecycle audits were completed under Phase 7.8.
+  Object destruction still requires external producer
+  lifetime coordination.
+  Concurrent destruction is unsupported.
+- ThreadSanitizer was unavailable in the verified
+  Windows/MSVC environment.
+  No sanitizer-based race-free guarantee is claimed.
+  Sanitizer verification using a supported toolchain
+  remains future work.
+- Phase 8 and Phase 9 performance measurements are
+  available. Results apply only to the documented
+  benchmark environments, configurations and workloads.
+- The Phase 9 trade-history optimization reduced
+  median elapsed time from 259.361 ms to 10.6309 ms
+  in the recorded 10,000-trade workload.
+  This represents approximately a 24.4x speedup
+  for that specific benchmark comparison.
+- No production-grade tail-latency guarantee,
+  exchange connectivity or live trading deployment
+  has been established.
+  Benchmark results do not establish HFT
+  production-readiness or performance superiority
+  across other systems and workloads.
 - MARKET SELL preflight currently uses Price{0}.
   This is consistent with the existing strictly positive
-  resting limit-price model, but assumes the model will
-  not admit zero or negative resting prices.
+  resting LIMIT price model, but assumes the model
+  will not admit zero or negative resting prices.
+  Future price-model extensions require revisiting
+  these synthetic preflight boundaries.
 - Trade-vector capacity is reserved before incoming-order
   staging. If staging fails, capacity may remain increased
   despite no trade occurring.
   The current guarantee preserves logical trading state,
   not necessarily the previous memory allocation state.
-- The latest Phase 7.5 verification passed all six CTest
-  suites in both Debug and Release.
+- Final Phase 9 Debug and Release regression tests
+  passed all six CTest suites in each configuration.
   These results establish tested functional behavior,
   not exhaustive concurrency or exception safety.
+- The production Release build succeeded with
+  BUILD_TESTING=OFF and BUILD_BENCHMARKS=OFF.
+  The executable launched successfully.
+  No test or benchmark targets were generated.
