@@ -6,15 +6,13 @@ The engine supports limit and market orders, price-time priority, partial and fu
 
 The project is developed using a **correctness-first, measurement-driven approach**, with particular attention to data structures, deterministic execution, memory management, exception safety, multithreading and automated verification.
 
-**Current status:** Phases 1 through 8 are complete, including core matching,
-correctness hardening, concurrent command processing, deterministic
-and randomized verification, latency benchmarking and allocation
-profiling.
+**Current status:** All 10 development phases are complete.
 
-Phase 9 optimization has demonstrated measurable improvements to
-trade-history allocation behavior. Production Release build
-verification is complete, with final documentation and release
-verification in progress.
+The project includes deterministic and randomized differential testing, concurrent worker verification, latency benchmarking, allocation profiling and measurement-driven optimization.
+
+Final Debug, Release and AddressSanitizer verification passed all six CTest suites. A separate x64 production Release build was also successfully compiled with testing and benchmarks disabled.
+
+Known limitations and deferred production-oriented features are documented in the engineering backlog and final engineering report.
 
 ## Key Features
 
@@ -198,9 +196,11 @@ Verification includes:
 
 The randomized matching suite includes five seeds with 1,000 operations per seed.
 
-Additional randomized cancellation edge cases remain tracked
-follow-up work. Concurrent correctness, ordering and seeded
-stress verification were completed in Phase 7.7.
+Phase 10 completed deterministic cancellation verification and seeded randomized differential testing covering LIMIT orders, MARKET orders and cancellations.
+
+The cancellation-focused randomized suite executed five fixed seeds with 1,000 operations per seed.
+
+Concurrent correctness, ordering and seeded stress verification were completed in Phase 7.7.
 
 ### Concurrent Worker Tests
 
@@ -276,14 +276,18 @@ A separate production configuration excludes test and benchmark
 targets.
 
 ```powershell
-cmake -S . -B build-production `
+cmake -S . -B build-production-x64 -G "Visual Studio 17 2022" -A x64 `
     -DBUILD_TESTING=OFF `
     -DBUILD_BENCHMARKS=OFF
 
-cmake --build build-production --config Release
+cmake --build build-production-x64 --config Release
 
-.\build-production\Release\matching_engine.exe
+.\build-production-x64\Release\matching_engine.exe
 ```
+
+The Phase 10 production x64 Release build completed successfully using
+MSVC 19.43 with testing and benchmarks disabled. Only the
+`matching_engine.exe` application executable was generated.
 
 ## Project Structure
 
@@ -325,6 +329,7 @@ hft-matching-engine/
 |   |-- PHASE8_PERFORMANCE_REPORT.md
 |   |-- P8-09-ALLOCATION-PROFILING.md
 |   |-- P9_04_BENCHMARK_REPORT.md
+|   |-- FINAL_ENGINEERING_REPORT.md
 |   `-- VERIFICATION_LOG.md
 |
 |-- CMakeLists.txt
@@ -341,18 +346,26 @@ hft-matching-engine/
 | 6 | Correctness hardening, failure testing and differential verification | Completed |
 | 7 | Concurrent command processing and worker lifecycle | Completed |
 | 8 | Latency benchmarking, throughput analysis and allocation profiling | Completed |
-| 9 | Measurement-driven optimization, architecture review and release preparation | In progress |
+| 9 | Measurement-driven optimization, architecture review and release preparation | Completed |
+| 10 | Randomized cancellation verification, sanitizer testing and final release validation | Completed |
 
-### Current Engineering Priorities
+### Final Verification Summary
 
-1. Complete architecture and usage documentation.
-2. Consolidate correctness, performance and known-limitations reports.
-3. Run final Debug, Release and production build verification.
-4. Prepare the final repository release.
+- Debug: 6/6 CTest suites passed (5.52 seconds).
+- Release: 6/6 CTest suites passed (5.51 seconds).
+- AddressSanitizer: 6/6 CTest suites passed (16.16 seconds).
+- Production x64 Release build: successful with testing and benchmarks disabled.
+- ThreadSanitizer: not executed due to native Windows/MSVC toolchain limitations.
 
-Additional allocator-failure coverage and exception-safety verification remain tracked follow-up items.
+AddressSanitizer results cover the exercised paths and do not establish
+freedom from data races.
 
-Detailed engineering tasks and outstanding limitations are maintained in the [Engineering Backlog](docs/ENGINEERING_BACKLOG.md).
+Additional allocator-failure coverage, bounded trade-history retention
+and stronger exception-safety guarantees remain documented limitations,
+not requirements for Phase 10 closure.
+
+Detailed engineering tasks and outstanding limitations are maintained
+in the [Engineering Backlog](docs/ENGINEERING_BACKLOG.md).
 
 ## Performance and Benchmarking
 
@@ -447,6 +460,7 @@ The goal is to build a well-tested foundation, make engineering tradeoffs explic
 - [Phase 8 Performance Report](docs/PHASE8_PERFORMANCE_REPORT.md)
 - [Phase 8 Allocation Profiling](docs/P8-09-ALLOCATION-PROFILING.md)
 - [Phase 9 Benchmark Comparison](docs/P9_04_BENCHMARK_REPORT.md)
+- [Final Engineering Report](docs/FINAL_ENGINEERING_REPORT.md)
 
 ## Development Philosophy
 

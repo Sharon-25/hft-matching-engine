@@ -3,6 +3,8 @@ build/
 /build-debug/
 /build-release/
 /build-production/
+/build-asan/
+/build-production-x64/
 cmake-build-*/
 
 # Visual Studio

@@ -896,14 +896,14 @@ cmake --build build-production --config Release
 
 ### Phase 10.4 — Final release verification
 
-- [ ] P10-07: Complete final Debug and Release verification.
+- [x] P10-07: Complete final Debug and Release verification.
 
       Build all supported test targets.
 
       Run all six CTest suites in both configurations.
 
       Verify tests remain meaningful in Release.
-- [ ] P10-08: Verify production Release build.
+- [x] P10-08: Verify production Release build.
 
       Configure with BUILD_TESTING=OFF
       and BUILD_BENCHMARKS=OFF.
@@ -912,7 +912,7 @@ cmake --build build-production --config Release
 
       Confirm test-only and profiling targets
       are excluded from the production build.
-- [ ] P10-09: Finalize portfolio documentation.
+- [x] P10-09: Finalize portfolio documentation.
 
       Update README and engineering reports
       only where final verification changes
@@ -923,7 +923,7 @@ cmake --build build-production --config Release
 
       Preserve accurate benchmark methodology,
       limitations and reproducibility instructions.
-- [ ] P10-10: Complete final Git commit and push.
+- [x] P10-10: Complete final Git commit and push.
 
       Verify source changes and documentation.
 
@@ -953,7 +953,7 @@ cmake --build build-production --config Release
 - [x] Isolate test-only failure-injection hooks from
       production builds (P6-15).
       Commit: db058b7.
-- [ ] Extend the reference matching model and seeded
+- [x] Extend the reference matching model and seeded
       randomized differential tests to include cancellation.
       Tracked under P10-02 through P10-04.
 - [x] Review trade-history memory management policy (P9-06).
@@ -986,7 +986,7 @@ cmake --build build-production --config Release
       and bounded-queue backpressure.
       Completed Phase 9 optimization comparison.
       Results are workload-specific, not production guarantees.
-- [ ] Evaluate and execute supported sanitizer diagnostics.
+- [x] Evaluate and execute supported sanitizer diagnostics.
       Tracked under P10-05 and P10-06.
       Unsupported diagnostics must be documented.
 
@@ -1027,8 +1027,11 @@ cmake --build build-production --config Release
   completed under P6-13.
 - Seeded randomized differential verification was
   completed under P6-14 (commit 6c49ddd).
-  Five seeds with 1,000 operations per seed were tested.
-  Randomized cancellation coverage remains pending.
+  Phase 10 extended the reference model and randomized
+  differential tests to cover cancellation under
+  P10-02 through P10-04.
+  Both verification efforts used five fixed seeds
+  with 1,000 operations per seed.
 - Trade history currently has no enforced memory bound.
   Trade records accumulate in std::vector<Trade>.
   Geometric capacity growth reduces allocation overhead
@@ -1062,11 +1065,13 @@ cmake --build build-production --config Release
   Object destruction still requires external producer
   lifetime coordination.
   Concurrent destruction is unsupported.
-- ThreadSanitizer was unavailable in the verified
-  Windows/MSVC environment.
-  No sanitizer-based race-free guarantee is claimed.
-  Sanitizer verification using a supported toolchain
-  remains future work.
+- AddressSanitizer verification was completed under
+  P10-05 and P10-06 using MSVC 19.43 on Windows x64.
+  All six CTest suites passed with no reported
+  AddressSanitizer violations in the exercised paths.
+  ThreadSanitizer remains unverified because it is
+  unsupported by the current native Windows/MSVC
+  toolchain. Data-race freedom is not claimed.
 - Phase 8 and Phase 9 performance measurements are
   available. Results apply only to the documented
   benchmark environments, configurations and workloads.

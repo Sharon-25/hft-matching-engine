@@ -3,7 +3,7 @@
 **Language:** C++20
 **Platform:** Windows / MSVC
 **Build system:** CMake
-**Project status:** Phase 9 release preparation in progress
+**Project status:** Phase 10 completed — final portfolio release verified
 
 ## 1. Executive Summary
 
@@ -69,7 +69,11 @@ The recorded randomized matching workload includes five seeds with 1,000 operati
 
 These tests increase confidence in behavioral consistency but do not constitute exhaustive state-space verification.
 
-Additional randomized cancellation coverage and actual allocator-operation failure injection remain follow-up work.
+Phase 10 added deterministic cancellation verification and seeded randomized differential testing covering LIMIT orders, MARKET orders and cancellations.
+
+The cancellation-focused randomized verification executed five fixed seeds with 1,000 operations per seed.
+
+Selected allocator-operation and container-failure injection scenarios were verified under P6-12. Exhaustive allocation-failure coverage and universal exception-safety guarantees are not claimed.
 
 ### 3.3 Exception Safety
 
@@ -153,9 +157,32 @@ The detailed comparison is recorded in `docs/P9_04_BENCHMARK_REPORT.md`.
 
 Following the optimization, the project underwent Debug and Release correctness and concurrency regression testing.
 
-The previously reported verification completed six CTest suites successfully in each configuration.
+Final Phase 10 verification completed all six CTest suites successfully in both Debug and Release configurations.
 
-Final release regression results remain subject to P9-12.
+- Debug: 6/6 tests passed in 5.52 seconds.
+- Release: 6/6 tests passed in 5.51 seconds.
+
+These results verify the tested behavior under both configurations.
+They do not establish production latency guarantees.
+
+### 5.5 AddressSanitizer Verification
+
+AddressSanitizer verification was performed on Windows using
+Visual Studio 2022, MSVC 19.43 and the x64 target.
+
+A separate Debug build was compiled with `/fsanitize=address /Zi /EHsc`.
+
+All six CTest suites passed under AddressSanitizer in 16.16 seconds,
+with no sanitizer violations reported during the executed tests.
+
+The MSVC AddressSanitizer runtime directory was added to PATH
+to resolve an initial runtime DLL loading failure.
+
+ThreadSanitizer was not executed because the native Windows/MSVC
+toolchain does not provide the required support.
+
+Consequently, AddressSanitizer results do not establish freedom
+from data races or guarantee memory safety on untested execution paths.
 
 ## 6. Engineering Decisions and Tradeoffs
 
@@ -198,16 +225,16 @@ Supporting zero or negative resting prices would require reconsideration of this
 A separate CMake configuration builds the production matching core and demonstration executable without test or benchmark targets.
 
 ```powershell
-cmake -S . -B build-production `
+cmake -S . -B build-production-x64 -G "Visual Studio 17 2022" -A x64 `
     -DBUILD_TESTING=OFF `
     -DBUILD_BENCHMARKS=OFF
 
-cmake --build build-production --config Release
+cmake --build build-production-x64 --config Release
 
-.\build-production\Release\matching_engine.exe
+.\build-production-x64\Release\matching_engine.exe
 ```
 
-The production Release build was successfully generated and the demonstration executable was run during P9-09.
+Phase 10 verified a clean x64 production Release configuration using MSVC 19.43. The build completed successfully with testing and benchmarks disabled. The only generated application executable was `matching_engine.exe`.
 
 The production configuration does not include the dedicated testing and benchmarking targets.
 
@@ -233,19 +260,23 @@ The following limitations remain explicitly acknowledged:
 
 These limitations define the scope of the current implementation and provide concrete directions for future engineering work.
 
+
 ## 9. Verification and Release Status
 
 | Area | Status |
 |---|---|
 | Core LIMIT and MARKET matching | Implemented and tested |
 | Price-time priority and cancellations | Implemented and tested |
-| Differential and seeded randomized verification | Implemented, with documented follow-ups |
+| Deterministic and randomized differential verification | Completed |
 | Concurrent worker and shutdown behavior | Implemented and tested |
 | Phase 8 performance measurement | Completed |
 | Phase 9 allocation optimization | Completed and measured |
-| Debug and Release regression after optimization | Previously passed |
-| Production Release build | Verified during P9-09 |
-| Final release regression and documentation audit | Pending P9-12 |
+| Final Debug verification | 6/6 passed |
+| Final Release verification | 6/6 passed |
+| AddressSanitizer verification | 6/6 passed |
+| ThreadSanitizer verification | Not performed; toolchain limitation |
+| Production x64 Release build | Verified |
+| Final portfolio documentation | Completed |
 
 ## 10. Conclusion
 
@@ -257,4 +288,6 @@ The measured optimization provides evidence that memory-management decisions can
 
 The implementation remains an educational and portfolio-oriented matching engine rather than a production exchange system.
 
-Final release readiness will be determined after the P9-12 regression and documentation checks.
+Final Phase 10 regression verification, AddressSanitizer testing, standalone production Release compilation and documentation review have completed successfully.
+
+The project is finalized as an educational and portfolio-oriented C++ low-latency order matching engine, with remaining engineering limitations explicitly documented.
